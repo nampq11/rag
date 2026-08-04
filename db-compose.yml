@@ -9,21 +9,12 @@ services:
       - pgdata2:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    networks:
+      - rag-network
 
-  fastapi:
-    build: .
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-500}
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./uploads:/app/uploads
-    depends_on:
-      - db
-    env_file:
-      - .env
+networks:
+  rag-network:
+    name: rag-network
 
 volumes:
   pgdata2:
