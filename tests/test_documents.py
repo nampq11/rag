@@ -14,58 +14,53 @@ os.environ.setdefault(
     "JWT_SECRET_KEY", "test-secret-key-must-be-at-least-32-characters"
 )
 
-from app.services.documents import DocumentService, DocumentStorageError
-from app.services.ingestion import DocumentIngestionError
+from app.services.documents import DocumentStorageError, get_metadata
 
 
-class InMemoryDocumentIngestionService:
-    async def ingest(self, *_: object) -> list[str]:
-        return []
+class InMemoryVectorStore:
+    async def aadd_documents(self, *_: object, **__: object) -> None:
+        pass
 
-    async def delete(self, *_: object) -> None:
+    async def adelete(self, *_: object, **__: object) -> None:
         pass
 
 
-class FailingDocumentIngestionService:
-    async def ingest(self, *_: object) -> None:
-        raise DocumentIngestionError("Database is unavailable")
-
-    async def delete(self, *_: object) -> None:
-        pass
+class FailingVectorStore(InMemoryVectorStore):
+    async def aadd_documents(self, *_: object, **__: object) -> None:
+        raise RuntimeError("Database unavailable")
 
 
-class PersistingDocumentIngestionService:
+class PersistingVectorStore:
     def __init__(self) -> None:
         self.deleted_ids: list[str] = []
 
-    async def ingest(self, *_: object) -> list[str]:
-        return ["document-chunk-0", "document-chunk-1"]
+    async def aadd_documents(self, *_: object, **__: object) -> None:
+        pass
 
-    async def delete(self, chunk_ids: list[str]) -> None:
-        self.deleted_ids = chunk_ids
+    async def adelete(self, ids: list[str]) -> None:
+        self.deleted_ids = ids
 
 
-class SecondIngestionFailsService:
+class SecondInsertionFailsVectorStore:
     def __init__(self) -> None:
-        self.ingestion_count = 0
+        self.insertion_count = 0
         self.deleted_chunk_ids: list[list[str]] = []
 
-    async def ingest(self, *_: object) -> list[str]:
-        self.ingestion_count += 1
-        if self.ingestion_count == 2:
-            raise DocumentIngestionError("Database is unavailable")
-        return ["first-document-chunk"]
+    async def aadd_documents(self, *_: object, **__: object) -> None:
+        self.insertion_count += 1
+        if self.insertion_count == 2:
+            raise RuntimeError("Database unavailable")
 
-    async def delete(self, chunk_ids: list[str]) -> None:
-        self.deleted_chunk_ids.append(chunk_ids)
-
-
-class FailingDeleteDocumentIngestionService(PersistingDocumentIngestionService):
-    async def delete(self, _: list[str]) -> None:
-        raise DocumentIngestionError("Database is unavailable")
+    async def adelete(self, ids: list[str]) -> None:
+        self.deleted_chunk_ids.append(ids)
 
 
-from main import app, vector_store
+class FailingDeleteVectorStore(PersistingVectorStore):
+    async def adelete(self, *_: object, **__: object) -> None:
+        raise RuntimeError("Database unavailable")
+
+
+from main import app
 
 
 def create_access_token() -> str:
@@ -93,16 +88,9 @@ def send_request(
 
 @pytest.fixture(autouse=True)
 def document_service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        app.state,
-        "document_service",
-        DocumentService(tmp_path, maximum_size_bytes=1024),
-    )
-    monkeypatch.setattr(
-        app.state,
-        "document_ingestion_service",
-        InMemoryDocumentIngestionService(),
-    )
+    monkeypatch.setattr(app.state, "upload_directory", tmp_path)
+    monkeypatch.setattr(app.state, "maximum_document_size_bytes", 1024)
+    monkeypatch.setattr(app.state, "vector_store", InMemoryVectorStore())
 
 
 def upload_document(filename: str, content: bytes) -> dict[str, object]:
@@ -135,10 +123,12 @@ def test_pgvector_records_reject_unknown_tables() -> None:
 
 
 def test_check_is_public(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def successful_health_check() -> None:
+    async def successful_health_check(_: object) -> None:
         pass
 
-    monkeypatch.setattr(vector_store, "check_health", successful_health_check)
+    monkeypatch.setattr(
+        "main.check_vector_store_health", successful_health_check
+    )
 
     response = send_request("GET", "/check/")
 
@@ -187,11 +177,7 @@ def test_upload_get_and_delete_document(tmp_path: Path) -> None:
 def test_upload_rejects_documents_larger_than_configured_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        app.state,
-        "document_service",
-        DocumentService(tmp_path, maximum_size_bytes=3),
-    )
+    monkeypatch.setattr(app.state, "maximum_document_size_bytes", 3)
 
     response = send_request(
         "POST",
@@ -210,11 +196,7 @@ def test_upload_rejects_documents_larger_than_configured_limit(
 def test_upload_removes_file_when_document_ingestion_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        app.state,
-        "document_ingestion_service",
-        FailingDocumentIngestionService(),
-    )
+    monkeypatch.setattr(app.state, "vector_store", FailingVectorStore())
 
     response = send_request(
         "POST",
@@ -231,10 +213,8 @@ def test_upload_removes_file_when_document_ingestion_fails(
 def test_upload_rolls_back_preceding_documents_when_later_ingestion_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ingestion_service = SecondIngestionFailsService()
-    monkeypatch.setattr(
-        app.state, "document_ingestion_service", ingestion_service
-    )
+    vector_store = SecondInsertionFailsVectorStore()
+    monkeypatch.setattr(app.state, "vector_store", vector_store)
 
     response = send_request(
         "POST",
@@ -248,24 +228,23 @@ def test_upload_rolls_back_preceding_documents_when_later_ingestion_fails(
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Document ingestion is unavailable"}
-    assert ingestion_service.deleted_chunk_ids == [[], ["first-document-chunk"]]
+    assert [len(chunk_ids) for chunk_ids in vector_store.deleted_chunk_ids] == [
+        1,
+        1,
+    ]
     assert list(tmp_path.iterdir()) == []
 
 
 def test_upload_removes_local_file_when_vector_cleanup_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        app.state,
-        "document_ingestion_service",
-        FailingDeleteDocumentIngestionService(),
-    )
+    monkeypatch.setattr(app.state, "vector_store", FailingDeleteVectorStore())
 
     def fail_to_persist_chunk_ids(*_: object) -> None:
         raise DocumentStorageError("Unable to store document metadata")
 
     monkeypatch.setattr(
-        app.state.document_service, "set_chunk_ids", fail_to_persist_chunk_ids
+        "app.routes.document_routes.set_chunk_ids", fail_to_persist_chunk_ids
     )
 
     response = send_request(
@@ -320,17 +299,15 @@ def test_upload_rejects_documents_exceeding_total_size(
 def test_delete_uses_chunk_ids_persisted_during_ingestion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ingestion_service = PersistingDocumentIngestionService()
-    monkeypatch.setattr(
-        app.state, "document_ingestion_service", ingestion_service
-    )
+    vector_store = PersistingVectorStore()
+    monkeypatch.setattr(app.state, "vector_store", vector_store)
 
     uploaded_document = upload_document("notes.txt", b"important notes")
     document_id = UUID(uploaded_document["id"])
-    metadata = app.state.document_service.get_metadata(document_id)
+    metadata = get_metadata(app.state.upload_directory, document_id)
 
     assert metadata is not None
-    assert metadata.chunk_ids == ["document-chunk-0", "document-chunk-1"]
+    assert metadata.chunk_ids == [f"{document_id}:0"]
 
     response = send_request(
         "DELETE",
@@ -339,10 +316,7 @@ def test_delete_uses_chunk_ids_persisted_during_ingestion(
     )
 
     assert response.status_code == 204
-    assert ingestion_service.deleted_ids == [
-        "document-chunk-0",
-        "document-chunk-1",
-    ]
+    assert vector_store.deleted_ids == [f"{document_id}:0"]
 
 
 def test_corrupt_metadata_returns_a_storage_error(tmp_path: Path) -> None:
@@ -372,7 +346,7 @@ def test_legacy_document_metadata_defaults_to_no_chunk_ids(
     del metadata["chunk_ids"]
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
-    loaded_metadata = app.state.document_service.get_metadata(document_id)
+    loaded_metadata = get_metadata(app.state.upload_directory, document_id)
 
     assert loaded_metadata is not None
     assert loaded_metadata.chunk_ids == []

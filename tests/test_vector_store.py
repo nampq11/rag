@@ -1,9 +1,7 @@
-from app.services.vector_store import PgVectorDocumentStore
+from app.services.vector_store import create_vector_store
 
 
-def test_vector_store_uses_configured_ollama_embeddings(
-    monkeypatch,
-) -> None:
+def test_vector_store_uses_configured_ollama_embeddings(monkeypatch) -> None:
     captured_arguments: dict[str, object] = {}
 
     class FakeEmbeddings:
@@ -18,16 +16,16 @@ def test_vector_store_uses_configured_ollama_embeddings(
         "app.services.vector_store.OllamaEmbeddings", FakeEmbeddings
     )
     monkeypatch.setattr("app.services.vector_store.PGVector", FakePgVector)
-    store = PgVectorDocumentStore(
+
+    engine, _ = create_vector_store(
         "postgresql+asyncpg://user:password@localhost:5434/database",
         "documents",
         "nomic-embed-text",
         "http://localhost:11434",
     )
 
-    _ = store.vector_store
-
     assert captured_arguments == {
         "model": "nomic-embed-text",
         "base_url": "http://localhost:11434",
     }
+    engine.sync_engine.dispose()

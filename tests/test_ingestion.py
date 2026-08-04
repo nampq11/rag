@@ -10,7 +10,8 @@ from app.models import DocumentMetadata
 from app.services.ingestion import (
     DocumentIngestionError,
     DocumentIngestionLimitError,
-    DocumentIngestionService,
+    delete_document_vectors,
+    ingest_document,
 )
 
 
@@ -19,12 +20,12 @@ class RecordingVectorStore:
         self.added_batches: list[tuple[list[Document], list[str]]] = []
         self.deleted_ids: list[str] = []
 
-    async def add_documents(
+    async def aadd_documents(
         self, documents: list[Document], ids: list[str]
     ) -> None:
         self.added_batches.append((documents, ids))
 
-    async def delete(self, ids: list[str]) -> None:
+    async def adelete(self, ids: list[str]) -> None:
         self.deleted_ids = ids
 
 
@@ -38,6 +39,26 @@ def metadata() -> DocumentMetadata:
     )
 
 
+def ingest(
+    vector_store: RecordingVectorStore,
+    metadata: DocumentMetadata,
+    path: Path,
+    **settings: int,
+) -> list[str]:
+    return asyncio.run(
+        ingest_document(
+            vector_store.aadd_documents,
+            vector_store.adelete,
+            metadata,
+            path,
+            chunk_size=settings.get("chunk_size", 10),
+            chunk_overlap=settings.get("chunk_overlap", 2),
+            maximum_chunks=settings.get("maximum_chunks", 10),
+            batch_size=settings.get("batch_size", 2),
+        )
+    )
+
+
 def test_ingest_chunks_text_preserves_metadata_and_batches_vectors(
     tmp_path: Path,
 ) -> None:
@@ -45,15 +66,8 @@ def test_ingest_chunks_text_preserves_metadata_and_batches_vectors(
     content_path = tmp_path / str(document_metadata.id)
     content_path.write_text("one two three four five six", encoding="utf-8")
     vector_store = RecordingVectorStore()
-    service = DocumentIngestionService(
-        vector_store,
-        chunk_size=10,
-        chunk_overlap=2,
-        maximum_chunks=10,
-        batch_size=2,
-    )
 
-    chunk_ids = asyncio.run(service.ingest(document_metadata, content_path))
+    chunk_ids = ingest(vector_store, document_metadata, content_path)
 
     assert chunk_ids == [
         f"{document_metadata.id}:{index}" for index in range(4)
@@ -81,19 +95,14 @@ def test_delete_uses_persisted_chunk_ids_without_reloading_document(
         "content can change after ingestion", encoding="utf-8"
     )
     vector_store = RecordingVectorStore()
-    service = DocumentIngestionService(
-        vector_store,
-        chunk_size=100,
-        chunk_overlap=0,
-        maximum_chunks=10,
-        batch_size=2,
-    )
     persisted_chunk_ids = [
         f"{document_metadata.id}:{index}" for index in range(4)
     ]
 
     content_path.unlink()
-    asyncio.run(service.delete(persisted_chunk_ids))
+    asyncio.run(
+        delete_document_vectors(vector_store.adelete, persisted_chunk_ids)
+    )
 
     assert vector_store.deleted_ids == persisted_chunk_ids
 
@@ -102,26 +111,24 @@ def test_ingest_rejects_documents_with_too_many_chunks(tmp_path: Path) -> None:
     document_metadata = metadata()
     content_path = tmp_path / str(document_metadata.id)
     content_path.write_text("one two three four five six", encoding="utf-8")
-    service = DocumentIngestionService(
-        RecordingVectorStore(),
-        chunk_size=10,
-        chunk_overlap=2,
-        maximum_chunks=3,
-        batch_size=2,
-    )
 
     with pytest.raises(DocumentIngestionLimitError, match="chunk count"):
-        asyncio.run(service.ingest(document_metadata, content_path))
+        ingest(
+            RecordingVectorStore(),
+            document_metadata,
+            content_path,
+            maximum_chunks=3,
+        )
 
 
 def test_ingest_rolls_back_all_batches_when_insertion_fails(
     tmp_path: Path,
 ) -> None:
     class FailingVectorStore(RecordingVectorStore):
-        async def add_documents(
+        async def aadd_documents(
             self, documents: list[Document], ids: list[str]
         ) -> None:
-            await super().add_documents(documents, ids)
+            await super().aadd_documents(documents, ids)
             if len(self.added_batches) == 2:
                 raise RuntimeError("Database unavailable")
 
@@ -129,16 +136,9 @@ def test_ingest_rolls_back_all_batches_when_insertion_fails(
     content_path = tmp_path / str(document_metadata.id)
     content_path.write_text("one two three four five six", encoding="utf-8")
     vector_store = FailingVectorStore()
-    service = DocumentIngestionService(
-        vector_store,
-        chunk_size=10,
-        chunk_overlap=2,
-        maximum_chunks=10,
-        batch_size=2,
-    )
 
     with pytest.raises(DocumentIngestionError, match="Unable to ingest"):
-        asyncio.run(service.ingest(document_metadata, content_path))
+        ingest(vector_store, document_metadata, content_path)
 
     assert vector_store.deleted_ids == [
         f"{document_metadata.id}:{index}" for index in range(4)
@@ -146,12 +146,7 @@ def test_ingest_rolls_back_all_batches_when_insertion_fails(
 
 
 def test_ingest_wraps_loader_errors(tmp_path: Path) -> None:
-    document_metadata = metadata()
-    service = DocumentIngestionService(
-        RecordingVectorStore(), 10, 2, maximum_chunks=10, batch_size=2
-    )
-
     with pytest.raises(
         DocumentIngestionError, match="Unable to ingest document"
     ):
-        asyncio.run(service.ingest(document_metadata, tmp_path / "missing"))
+        ingest(RecordingVectorStore(), metadata(), tmp_path / "missing")
