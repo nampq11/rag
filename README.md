@@ -19,7 +19,7 @@ PostgreSQL is available on port `5433` from the host. API startup enables the pg
 
 Supported ingestion formats are UTF-8 text and PDF. The original document can still be downloaded with `GET /documents/{document_id}`. Deleting a document removes its matching vector chunks before removing the stored file.
 
-Configuration and limits are documented in `.env.example`. The API creates a URI-safe PostgreSQL URL from separate `POSTGRES_*` settings; production may instead provide a fully URI-encoded `DATABASE_URL`.
+Configuration and limits are documented in `.env.example`. The API creates a URI-safe `postgresql+asyncpg` URL from separate `POSTGRES_*` settings; production may instead provide a fully URI-encoded `DATABASE_URL` using the same driver scheme.
 
 ## Verify
 

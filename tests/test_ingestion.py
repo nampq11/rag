@@ -19,10 +19,12 @@ class RecordingVectorStore:
         self.added_batches: list[tuple[list[Document], list[str]]] = []
         self.deleted_ids: list[str] = []
 
-    def add_documents(self, documents: list[Document], ids: list[str]) -> None:
+    async def add_documents(
+        self, documents: list[Document], ids: list[str]
+    ) -> None:
         self.added_batches.append((documents, ids))
 
-    def delete(self, ids: list[str]) -> None:
+    async def delete(self, ids: list[str]) -> None:
         self.deleted_ids = ids
 
 
@@ -116,10 +118,10 @@ def test_ingest_rolls_back_all_batches_when_insertion_fails(
     tmp_path: Path,
 ) -> None:
     class FailingVectorStore(RecordingVectorStore):
-        def add_documents(
+        async def add_documents(
             self, documents: list[Document], ids: list[str]
         ) -> None:
-            super().add_documents(documents, ids)
+            await super().add_documents(documents, ids)
             if len(self.added_batches) == 2:
                 raise RuntimeError("Database unavailable")
 

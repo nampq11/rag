@@ -3,7 +3,8 @@
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 
 class PgVectorDocumentStore:
@@ -15,10 +16,9 @@ class PgVectorDocumentStore:
         collection_name: str,
         embedding_model: str,
     ) -> None:
-        self.database_url = database_url
         self.collection_name = collection_name
         self.embedding_model = embedding_model
-        self.engine: Engine = create_engine(database_url)
+        self.engine: AsyncEngine = create_async_engine(database_url)
         self._vector_store: PGVector | None = None
 
     @property
@@ -31,27 +31,40 @@ class PgVectorDocumentStore:
                 connection=self.engine,
                 collection_name=self.collection_name,
                 use_jsonb=True,
-                create_extension=True,
+                create_extension=False,
+                async_mode=True,
             )
         return self._vector_store
 
-    def provision(self) -> None:
+    async def provision(self) -> None:
         """Initializes the PGVector collection."""
-        _ = self.vector_store
+        async with self.engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtext('rag-pgvector-extension'))"
+                )
+            )
+            await connection.execute(
+                text("CREATE EXTENSION IF NOT EXISTS vector")
+            )
+        await self.vector_store.__apost_init__()
 
-    def check_health(self) -> None:
+    async def check_health(self) -> None:
         """Raises when PostgreSQL is unavailable."""
-        with self.engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+        async with self.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Releases PostgreSQL connections."""
-        self.engine.dispose()
+        await self.engine.dispose()
 
-    def add_documents(self, documents: list[Document], ids: list[str]) -> None:
+    async def add_documents(
+        self, documents: list[Document], ids: list[str]
+    ) -> None:
         """Adds document chunks to the vector store."""
-        self.vector_store.add_documents(documents, ids=ids)
+        await self.vector_store.aadd_documents(documents, ids=ids)
 
-    def delete(self, ids: list[str]) -> None:
+    async def delete(self, ids: list[str]) -> None:
         """Deletes a stored document."""
-        self.vector_store.delete(ids=ids)
+        await self.vector_store.adelete(ids=ids)

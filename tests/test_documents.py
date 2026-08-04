@@ -117,8 +117,28 @@ def upload_document(filename: str, content: bytes) -> dict[str, object]:
     return response.json()["documents"][0]
 
 
+def test_pgvector_diagnostic_routes_require_a_jwt() -> None:
+    response = send_request("GET", "/db/tables")
+
+    assert response.status_code == 401
+
+
+def test_pgvector_records_reject_unknown_tables() -> None:
+    response = send_request(
+        "GET",
+        "/records/all?table_name=unknown_table",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Unsupported pgvector table"}
+
+
 def test_check_is_public(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(vector_store, "check_health", lambda: None)
+    async def successful_health_check() -> None:
+        pass
+
+    monkeypatch.setattr(vector_store, "check_health", successful_health_check)
 
     response = send_request("GET", "/check/")
 

@@ -30,7 +30,7 @@ maximum_total_document_size_bytes = positive_integer_setting(
 )
 
 default_database_url = URL.create(
-    "postgresql+psycopg",
+    "postgresql+asyncpg",
     username=os.environ.get("POSTGRES_USER", "myuser"),
     password=os.environ.get("POSTGRES_PASSWORD", "mypassword"),
     host=os.environ.get("POSTGRES_HOST", "localhost"),

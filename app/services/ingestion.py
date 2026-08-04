@@ -14,11 +14,13 @@ from app.utils.document_loader import load_document
 class VectorDocumentStore(Protocol):
     """Defines the vector-store operations used during ingestion."""
 
-    def add_documents(self, documents: list[Document], ids: list[str]) -> None:
+    async def add_documents(
+        self, documents: list[Document], ids: list[str]
+    ) -> None:
         """Adds document chunks to the vector store."""
         ...
 
-    def delete(self, ids: list[str]) -> None:
+    async def delete(self, ids: list[str]) -> None:
         """Deletes document chunks from the vector store."""
         ...
 
@@ -82,19 +84,17 @@ class DocumentIngestionService:
         inserted_chunk_ids: list[str] = []
         try:
             for start in range(0, len(chunks), self.batch_size):
-                batch = chunks[start : start + self.batch_size]
-                batch_ids = chunk_ids[start : start + self.batch_size]
-                inserted_chunk_ids.extend(batch_ids)
-                await asyncio.to_thread(
-                    self.vector_store.add_documents, batch, batch_ids
+                batch_documents = chunks[start : start + self.batch_size]
+                batch_chunk_ids = chunk_ids[start : start + self.batch_size]
+                inserted_chunk_ids.extend(batch_chunk_ids)
+                await self.vector_store.add_documents(
+                    batch_documents, batch_chunk_ids
                 )
             return chunk_ids
         except Exception as error:
             if inserted_chunk_ids:
                 try:
-                    await asyncio.to_thread(
-                        self.vector_store.delete, inserted_chunk_ids
-                    )
+                    await self.vector_store.delete(inserted_chunk_ids)
                 except Exception as cleanup_error:
                     raise DocumentIngestionError(
                         "Unable to roll back document ingestion for "
@@ -109,7 +109,7 @@ class DocumentIngestionService:
         if not chunk_ids:
             return
         try:
-            await asyncio.to_thread(self.vector_store.delete, chunk_ids)
+            await self.vector_store.delete(chunk_ids)
         except Exception as error:
             raise DocumentIngestionError(
                 "Unable to remove document from vector storage"

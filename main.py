@@ -1,6 +1,5 @@
 """Application entry point and dependency wiring."""
 
-import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -25,6 +24,7 @@ from app.config import (
 )
 from app.middleware import security_middleware
 from app.routes.document_routes import router as documents_router
+from app.routes.pgvector_routes import router as pgvector_router
 from app.services.documents import DocumentService
 from app.services.ingestion import DocumentIngestionService
 from app.services.vector_store import PgVectorDocumentStore
@@ -37,11 +37,11 @@ vector_store = PgVectorDocumentStore(
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Initializes application dependencies for the process lifetime."""
-    await asyncio.to_thread(vector_store.provision)
+    await vector_store.provision()
     try:
         yield
     finally:
-        vector_store.close()
+        await vector_store.close()
 
 
 def get_allowed_origins() -> list[str]:
@@ -55,6 +55,7 @@ def get_allowed_origins() -> list[str]:
 
 
 app = FastAPI(title="RAG API", lifespan=lifespan)
+app.state.vector_store = vector_store
 app.state.document_service = DocumentService(
     upload_directory, maximum_document_size_bytes
 )
@@ -69,6 +70,7 @@ app.state.maximum_document_count = maximum_document_count
 app.state.maximum_total_document_size_bytes = maximum_total_document_size_bytes
 app.middleware("http")(security_middleware)
 app.include_router(documents_router)
+app.include_router(pgvector_router)
 
 allowed_origins = get_allowed_origins()
 if allowed_origins:
@@ -97,7 +99,7 @@ async def health_check_status() -> dict[str, str]:
 async def check() -> dict[str, str]:
     """Returns readiness based on PostgreSQL availability."""
     try:
-        await asyncio.to_thread(vector_store.check_health)
+        await vector_store.check_health()
     except Exception as error:
         logger.exception("PostgreSQL readiness check failed")
         raise HTTPException(

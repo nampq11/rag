@@ -92,7 +92,10 @@ def test_health_check_returns_ok_without_a_jwt() -> None:
 def test_readiness_check_returns_ok_when_database_is_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(vector_store, "check_health", lambda: None)
+    async def successful_health_check() -> None:
+        pass
+
+    monkeypatch.setattr(vector_store, "check_health", successful_health_check)
 
     response = request("/check/")
 
@@ -103,7 +106,7 @@ def test_readiness_check_returns_ok_when_database_is_available(
 def test_readiness_check_returns_unavailable_when_database_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_health_check() -> None:
+    async def fail_health_check() -> None:
         raise OSError("Database is unavailable")
 
     monkeypatch.setattr(vector_store, "check_health", fail_health_check)
@@ -142,7 +145,7 @@ def test_database_url_encodes_reserved_password_characters(
         importlib.reload(config)
 
         assert config.database_url == (
-            "postgresql+psycopg://rag-user:p%40ss%2F%3F%23%25word"
+            "postgresql+asyncpg://rag-user:p%40ss%2F%3F%23%25word"
             "@database.example.com:5432/rag"
         )
 
