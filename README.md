@@ -1,0 +1,29 @@
+# RAG API
+
+FastAPI service that stores uploaded documents locally and indexes their LangChain chunks in PostgreSQL with pgvector.
+
+## Run
+
+1. Copy `.env.example` to `.env` and set `JWT_SECRET_KEY` and `OPENAI_API_KEY`.
+2. Start the application and database:
+
+```bash
+docker compose up --build
+```
+
+PostgreSQL is available on port `5433` from the host. API startup enables the pgvector extension, provisions the LangChain collection, and fails readiness if the database is unavailable or the application database role cannot create the extension.
+
+## Document ingestion
+
+`POST /documents/` saves each upload, then uses LangChain loaders and `RecursiveCharacterTextSplitter` to split it into chunks. Chunks are embedded in bounded `EMBEDDING_BATCH_SIZE` batches and stored in the pgvector collection configured by `VECTOR_COLLECTION_NAME`. Their IDs are persisted with the document metadata, so deletion remains correct if chunking settings change later.
+
+Supported ingestion formats are UTF-8 text and PDF. The original document can still be downloaded with `GET /documents/{document_id}`. Deleting a document removes its matching vector chunks before removing the stored file.
+
+Configuration and limits are documented in `.env.example`. The API creates a URI-safe PostgreSQL URL from separate `POSTGRES_*` settings; production may instead provide a fully URI-encoded `DATABASE_URL`.
+
+## Verify
+
+```bash
+uv run ruff check .
+uv run pytest
+```

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,7 +14,57 @@ os.environ.setdefault(
     "JWT_SECRET_KEY", "test-secret-key-must-be-at-least-32-characters"
 )
 
-from app.services.documents import DocumentService
+from app.services.documents import DocumentService, DocumentStorageError
+from app.services.ingestion import DocumentIngestionError
+
+
+class InMemoryDocumentIngestionService:
+    async def ingest(self, *_: object) -> list[str]:
+        return []
+
+    async def delete(self, *_: object) -> None:
+        pass
+
+
+class FailingDocumentIngestionService:
+    async def ingest(self, *_: object) -> None:
+        raise DocumentIngestionError("Database is unavailable")
+
+    async def delete(self, *_: object) -> None:
+        pass
+
+
+class PersistingDocumentIngestionService:
+    def __init__(self) -> None:
+        self.deleted_ids: list[str] = []
+
+    async def ingest(self, *_: object) -> list[str]:
+        return ["document-chunk-0", "document-chunk-1"]
+
+    async def delete(self, chunk_ids: list[str]) -> None:
+        self.deleted_ids = chunk_ids
+
+
+class SecondIngestionFailsService:
+    def __init__(self) -> None:
+        self.ingestion_count = 0
+        self.deleted_chunk_ids: list[list[str]] = []
+
+    async def ingest(self, *_: object) -> list[str]:
+        self.ingestion_count += 1
+        if self.ingestion_count == 2:
+            raise DocumentIngestionError("Database is unavailable")
+        return ["first-document-chunk"]
+
+    async def delete(self, chunk_ids: list[str]) -> None:
+        self.deleted_chunk_ids.append(chunk_ids)
+
+
+class FailingDeleteDocumentIngestionService(PersistingDocumentIngestionService):
+    async def delete(self, _: list[str]) -> None:
+        raise DocumentIngestionError("Database is unavailable")
+
+
 from main import app
 
 
@@ -46,6 +97,11 @@ def document_service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         app.state,
         "document_service",
         DocumentService(tmp_path, maximum_size_bytes=1024),
+    )
+    monkeypatch.setattr(
+        app.state,
+        "document_ingestion_service",
+        InMemoryDocumentIngestionService(),
     )
 
 
@@ -110,7 +166,9 @@ def test_upload_rejects_documents_larger_than_configured_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        app.state, "document_service", DocumentService(tmp_path, maximum_size_bytes=3)
+        app.state,
+        "document_service",
+        DocumentService(tmp_path, maximum_size_bytes=3),
     )
 
     response = send_request(
@@ -121,14 +179,156 @@ def test_upload_rejects_documents_larger_than_configured_limit(
     )
 
     assert response.status_code == 413
-    assert response.json() == {"detail": "Document exceeds maximum allowed size"}
+    assert response.json() == {
+        "detail": "Document exceeds maximum allowed size"
+    }
     assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_removes_file_when_document_ingestion_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        app.state,
+        "document_ingestion_service",
+        FailingDocumentIngestionService(),
+    )
+
+    response = send_request(
+        "POST",
+        "/documents/",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        files={"files": ("notes.txt", b"important notes", "text/plain")},
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Document ingestion is unavailable"}
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_rolls_back_preceding_documents_when_later_ingestion_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ingestion_service = SecondIngestionFailsService()
+    monkeypatch.setattr(
+        app.state, "document_ingestion_service", ingestion_service
+    )
+
+    response = send_request(
+        "POST",
+        "/documents/",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        files=[
+            ("files", ("first.txt", b"first", "text/plain")),
+            ("files", ("second.txt", b"second", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Document ingestion is unavailable"}
+    assert ingestion_service.deleted_chunk_ids == [[], ["first-document-chunk"]]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_removes_local_file_when_vector_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        app.state,
+        "document_ingestion_service",
+        FailingDeleteDocumentIngestionService(),
+    )
+
+    def fail_to_persist_chunk_ids(*_: object) -> None:
+        raise DocumentStorageError("Unable to store document metadata")
+
+    monkeypatch.setattr(
+        app.state.document_service, "set_chunk_ids", fail_to_persist_chunk_ids
+    )
+
+    response = send_request(
+        "POST",
+        "/documents/",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        files={"files": ("notes.txt", b"important notes", "text/plain")},
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Document storage is unavailable"}
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_rejects_too_many_documents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app.state, "maximum_document_count", 1)
+
+    response = send_request(
+        "POST",
+        "/documents/",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        files=[
+            ("files", ("first.txt", b"first", "text/plain")),
+            ("files", ("second.txt", b"second", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Too many documents in one upload"}
+
+
+def test_upload_rejects_documents_exceeding_total_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app.state, "maximum_total_document_size_bytes", 3)
+
+    response = send_request(
+        "POST",
+        "/documents/",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        files={"files": ("large.txt", b"four", "text/plain")},
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "detail": "Documents exceed maximum total allowed size"
+    }
+
+
+def test_delete_uses_chunk_ids_persisted_during_ingestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ingestion_service = PersistingDocumentIngestionService()
+    monkeypatch.setattr(
+        app.state, "document_ingestion_service", ingestion_service
+    )
+
+    uploaded_document = upload_document("notes.txt", b"important notes")
+    document_id = UUID(uploaded_document["id"])
+    metadata = app.state.document_service.get_metadata(document_id)
+
+    assert metadata is not None
+    assert metadata.chunk_ids == ["document-chunk-0", "document-chunk-1"]
+
+    response = send_request(
+        "DELETE",
+        f"/documents/{document_id}",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+    )
+
+    assert response.status_code == 204
+    assert ingestion_service.deleted_ids == [
+        "document-chunk-0",
+        "document-chunk-1",
+    ]
 
 
 def test_corrupt_metadata_returns_a_storage_error(tmp_path: Path) -> None:
     uploaded_document = upload_document("notes.txt", b"important notes")
     document_id = UUID(uploaded_document["id"])
-    (tmp_path / f"{document_id}.json").write_text("{invalid json", encoding="utf-8")
+    (tmp_path / f"{document_id}.json").write_text(
+        "{invalid json", encoding="utf-8"
+    )
 
     response = send_request(
         "GET",
@@ -138,6 +338,22 @@ def test_corrupt_metadata_returns_a_storage_error(tmp_path: Path) -> None:
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Document storage is unavailable"}
+
+
+def test_legacy_document_metadata_defaults_to_no_chunk_ids(
+    tmp_path: Path,
+) -> None:
+    uploaded_document = upload_document("notes.txt", b"important notes")
+    document_id = UUID(uploaded_document["id"])
+    metadata_path = tmp_path / f"{document_id}.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    del metadata["chunk_ids"]
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    loaded_metadata = app.state.document_service.get_metadata(document_id)
+
+    assert loaded_metadata is not None
+    assert loaded_metadata.chunk_ids == []
 
 
 def test_get_all_ids_returns_all_uploaded_document_ids() -> None:

@@ -43,7 +43,9 @@ def test_public_routes_do_not_require_a_jwt(path: str) -> None:
 
 
 @pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
-def test_cors_allows_document_api_methods_from_configured_origin(method: str) -> None:
+def test_cors_allows_document_api_methods_from_configured_origin(
+    method: str,
+) -> None:
     async def send_preflight_request() -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -99,3 +101,25 @@ def test_server_configuration_uses_environment_variables(
 
     assert config.api_host == "127.0.0.1"
     assert config.api_port == 9000
+
+
+def test_database_url_encodes_reserved_password_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import config
+
+    with monkeypatch.context() as environment:
+        environment.delenv("DATABASE_URL", raising=False)
+        environment.setenv("POSTGRES_HOST", "database.example.com")
+        environment.setenv("POSTGRES_PORT", "5432")
+        environment.setenv("POSTGRES_DB", "rag")
+        environment.setenv("POSTGRES_USER", "rag-user")
+        environment.setenv("POSTGRES_PASSWORD", "p@ss/?#%word")
+        importlib.reload(config)
+
+        assert config.database_url == (
+            "postgresql+psycopg://rag-user:p%40ss%2F%3F%23%25word"
+            "@database.example.com:5432/rag"
+        )
+
+    importlib.reload(config)
