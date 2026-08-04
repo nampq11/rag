@@ -96,7 +96,7 @@ async def clean_up_uploaded_documents(
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-@router.post("/", response_model=DocumentsResponse, status_code=201)
+@router.post("/embed", response_model=DocumentsResponse, status_code=201)
 async def upload_documents(
     request: Request,
     files: Annotated[list[UploadFile], File()],

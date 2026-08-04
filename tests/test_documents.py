@@ -108,7 +108,7 @@ def document_service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def upload_document(filename: str, content: bytes) -> dict[str, object]:
     response = send_request(
         "POST",
-        "/documents/",
+        "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files={"files": (filename, content, "text/plain")},
     )
@@ -195,7 +195,7 @@ def test_upload_rejects_documents_larger_than_configured_limit(
 
     response = send_request(
         "POST",
-        "/documents/",
+        "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files={"files": ("large.txt", b"four", "text/plain")},
     )
@@ -218,7 +218,7 @@ def test_upload_removes_file_when_document_ingestion_fails(
 
     response = send_request(
         "POST",
-        "/documents/",
+        "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files={"files": ("notes.txt", b"important notes", "text/plain")},
     )
@@ -238,7 +238,7 @@ def test_upload_rolls_back_preceding_documents_when_later_ingestion_fails(
 
     response = send_request(
         "POST",
-        "/documents/",
+        "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files=[
             ("files", ("first.txt", b"first", "text/plain")),
@@ -270,7 +270,7 @@ def test_upload_removes_local_file_when_vector_cleanup_fails(
 
     response = send_request(
         "POST",
-        "/documents/",
+        "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files={"files": ("notes.txt", b"important notes", "text/plain")},
     )
@@ -287,7 +287,7 @@ def test_upload_rejects_too_many_documents(
 
     response = send_request(
         "POST",
-        "/documents/",
+        "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files=[
             ("files", ("first.txt", b"first", "text/plain")),
@@ -306,7 +306,7 @@ def test_upload_rejects_documents_exceeding_total_size(
 
     response = send_request(
         "POST",
-        "/documents/",
+        "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files={"files": ("large.txt", b"four", "text/plain")},
     )

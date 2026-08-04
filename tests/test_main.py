@@ -130,6 +130,21 @@ def test_openapi_documents_bearer_authentication() -> None:
     assert "security" not in schema["paths"]["/health"]["get"]
 
 
+def test_openapi_renders_document_uploads_as_files() -> None:
+    schema = request("/openapi.json").json()
+    request_body = schema["paths"]["/documents/embed"]["post"]["requestBody"]
+    schema_reference = request_body["content"]["multipart/form-data"][
+        "schema"
+    ]["$ref"]
+    component_name = schema_reference.rsplit("/", maxsplit=1)[1]
+    files = schema["components"]["schemas"][component_name]["properties"][
+        "files"
+    ]
+
+    assert files["items"] == {"type": "string", "format": "binary"}
+
+
+
 def test_server_configuration_uses_environment_variables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

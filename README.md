@@ -23,7 +23,7 @@ PostgreSQL is available on the host port configured by `POSTGRES_PORT` (default 
 
 ## Document ingestion
 
-`POST /documents/` saves each upload, then uses LangChain loaders and `RecursiveCharacterTextSplitter` to split it into chunks. Chunks are embedded in bounded `EMBEDDING_BATCH_SIZE` batches and stored in the pgvector collection configured by `VECTOR_COLLECTION_NAME`. Their IDs are persisted with the document metadata, so deletion remains correct if chunking settings change later.
+`POST /documents/embed` saves each upload, then uses LangChain loaders and `RecursiveCharacterTextSplitter` to split it into chunks. Chunks are embedded in bounded `EMBEDDING_BATCH_SIZE` batches and stored in the pgvector collection configured by `VECTOR_COLLECTION_NAME`. Their IDs are persisted with the document metadata, so deletion remains correct if chunking settings change later.
 
 Supported ingestion formats are UTF-8 text and PDF. The original document can still be downloaded with `GET /documents/{document_id}`. Deleting a document removes its matching vector chunks before removing the stored file.
 

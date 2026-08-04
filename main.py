@@ -113,12 +113,27 @@ async def check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def add_binary_format_for_file_uploads(schema: object) -> None:
+    """Makes FastAPI file schemas render as file pickers in Swagger UI."""
+    if isinstance(schema, dict):
+        if schema.get("contentMediaType") == "application/octet-stream":
+            schema["format"] = "binary"
+            del schema["contentMediaType"]
+        for value in schema.values():
+            add_binary_format_for_file_uploads(value)
+    elif isinstance(schema, list):
+        for value in schema:
+            add_binary_format_for_file_uploads(value)
+
+
+
 def custom_openapi() -> dict[str, object]:
     """Describes JWT authentication for protected API operations."""
     if app.openapi_schema:
         return app.openapi_schema
 
     schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    add_binary_format_for_file_uploads(schema)
     components = schema.setdefault("components", {})
     security_schemes = components.setdefault("securitySchemes", {})
     security_schemes["BearerAuth"] = {
