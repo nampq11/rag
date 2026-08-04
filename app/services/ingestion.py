@@ -4,13 +4,11 @@ import asyncio
 from pathlib import Path
 from typing import Protocol
 
-from langchain_community.document_loaders import TextLoader
-from langchain_community.document_loaders.pdf import PyPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.constants import DocumentContentType
 from app.models import DocumentMetadata
+from app.utils.document_loader import load_document
 
 
 class VectorDocumentStore(Protocol):
@@ -52,18 +50,11 @@ class DocumentIngestionService:
             chunk_overlap=chunk_overlap,
         )
 
-    @staticmethod
-    def load_document(metadata: DocumentMetadata, path: Path) -> list[Document]:
-        """Loads a document using the loader for its content type."""
-        if metadata.content_type == DocumentContentType.PDF:
-            return PyPDFLoader(str(path)).load()
-        return TextLoader(str(path), autodetect_encoding=True).load()
-
     async def ingest(self, metadata: DocumentMetadata, path: Path) -> list[str]:
         """Chunks and indexes a document, rolling back failed writes."""
         try:
             documents = await asyncio.to_thread(
-                self.load_document, metadata, path
+                load_document, metadata, path
             )
             chunks = self.text_splitter.split_documents(documents)
             if len(chunks) > self.maximum_chunks:
