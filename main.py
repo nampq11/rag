@@ -27,11 +27,15 @@ from app.config import (
 from app.middleware import PUBLIC_PATHS, security_middleware
 from app.routes.document_routes import router as documents_router
 from app.routes.pgvector_routes import router as pgvector_router
-from app.services.documents import DocumentService
-from app.services.ingestion import DocumentIngestionService
-from app.services.vector_store import PgVectorDocumentStore
+from app.services.documents import initialize_storage
+from app.services.vector_store import (
+    check_vector_store_health,
+    close_vector_store,
+    create_vector_store,
+    provision_vector_store,
+)
 
-vector_store = PgVectorDocumentStore(
+engine, vector_store = create_vector_store(
     database_url,
     vector_collection_name,
     embedding_model,
@@ -42,11 +46,11 @@ vector_store = PgVectorDocumentStore(
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Initializes application dependencies for the process lifetime."""
-    await vector_store.provision()
+    await provision_vector_store(engine, vector_store)
     try:
         yield
     finally:
-        await vector_store.close()
+        await close_vector_store(engine)
 
 
 def get_allowed_origins() -> list[str]:
@@ -59,20 +63,25 @@ def get_allowed_origins() -> list[str]:
     ]
 
 
+def configure_application(application: FastAPI) -> None:
+    """Stores application-wide dependencies and settings."""
+    initialize_storage(upload_directory)
+    application.state.engine = engine
+    application.state.vector_store = vector_store
+    application.state.upload_directory = upload_directory
+    application.state.maximum_document_size_bytes = maximum_document_size_bytes
+    application.state.document_chunk_size = document_chunk_size
+    application.state.document_chunk_overlap = document_chunk_overlap
+    application.state.document_maximum_chunks = document_maximum_chunks
+    application.state.embedding_batch_size = embedding_batch_size
+    application.state.maximum_document_count = maximum_document_count
+    application.state.maximum_total_document_size_bytes = (
+        maximum_total_document_size_bytes
+    )
+
+
 app = FastAPI(title="RAG API", lifespan=lifespan)
-app.state.vector_store = vector_store
-app.state.document_service = DocumentService(
-    upload_directory, maximum_document_size_bytes
-)
-app.state.document_ingestion_service = DocumentIngestionService(
-    vector_store,
-    document_chunk_size,
-    document_chunk_overlap,
-    document_maximum_chunks,
-    embedding_batch_size,
-)
-app.state.maximum_document_count = maximum_document_count
-app.state.maximum_total_document_size_bytes = maximum_total_document_size_bytes
+configure_application(app)
 app.middleware("http")(security_middleware)
 app.include_router(documents_router)
 app.include_router(pgvector_router)
@@ -104,7 +113,7 @@ async def health_check_status() -> dict[str, str]:
 async def check() -> dict[str, str]:
     """Returns readiness based on PostgreSQL availability."""
     try:
-        await vector_store.check_health()
+        await check_vector_store_health(engine)
     except Exception as error:
         logger.exception("PostgreSQL readiness check failed")
         raise HTTPException(
@@ -126,13 +135,14 @@ def add_binary_format_for_file_uploads(schema: object) -> None:
             add_binary_format_for_file_uploads(value)
 
 
-
 def custom_openapi() -> dict[str, object]:
     """Describes JWT authentication for protected API operations."""
     if app.openapi_schema:
         return app.openapi_schema
 
-    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    schema = get_openapi(
+        title=app.title, version=app.version, routes=app.routes
+    )
     add_binary_format_for_file_uploads(schema)
     components = schema.setdefault("components", {})
     security_schemes = components.setdefault("securitySchemes", {})

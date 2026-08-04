@@ -12,7 +12,7 @@ os.environ.setdefault(
     "JWT_SECRET_KEY", "test-secret-key-must-be-at-least-32-characters"
 )
 
-from main import app, vector_store
+from main import app
 
 
 def request(path: str, token: str | None = None) -> httpx.Response:
@@ -92,10 +92,12 @@ def test_health_check_returns_ok_without_a_jwt() -> None:
 def test_readiness_check_returns_ok_when_database_is_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def successful_health_check() -> None:
+    async def successful_health_check(_: object) -> None:
         pass
 
-    monkeypatch.setattr(vector_store, "check_health", successful_health_check)
+    monkeypatch.setattr(
+        "main.check_vector_store_health", successful_health_check
+    )
 
     response = request("/check/")
 
@@ -106,10 +108,10 @@ def test_readiness_check_returns_ok_when_database_is_available(
 def test_readiness_check_returns_unavailable_when_database_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fail_health_check() -> None:
+    async def fail_health_check(_: object) -> None:
         raise OSError("Database is unavailable")
 
-    monkeypatch.setattr(vector_store, "check_health", fail_health_check)
+    monkeypatch.setattr("main.check_vector_store_health", fail_health_check)
     response = request("/check/")
 
     assert response.status_code == 503
@@ -133,16 +135,15 @@ def test_openapi_documents_bearer_authentication() -> None:
 def test_openapi_renders_document_uploads_as_files() -> None:
     schema = request("/openapi.json").json()
     request_body = schema["paths"]["/documents/embed"]["post"]["requestBody"]
-    schema_reference = request_body["content"]["multipart/form-data"][
-        "schema"
-    ]["$ref"]
+    schema_reference = request_body["content"]["multipart/form-data"]["schema"][
+        "$ref"
+    ]
     component_name = schema_reference.rsplit("/", maxsplit=1)[1]
     files = schema["components"]["schemas"][component_name]["properties"][
         "files"
     ]
 
     assert files["items"] == {"type": "string", "format": "binary"}
-
 
 
 def test_server_configuration_uses_environment_variables(

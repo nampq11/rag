@@ -22,27 +22,21 @@ from app.models import (
     DocumentsResponse,
 )
 from app.services.documents import (
-    DocumentService,
     DocumentStorageError,
     DocumentTooLargeError,
+    content_path,
+    delete_document,
+    get_all_ids,
+    get_metadata,
+    save_document,
+    set_chunk_ids,
 )
 from app.services.ingestion import (
     DocumentIngestionError,
     DocumentIngestionLimitError,
-    DocumentIngestionService,
+    delete_document_vectors,
+    ingest_document,
 )
-
-
-def get_document_service(request: Request) -> DocumentService:
-    """Returns the document storage service for this request."""
-    return request.app.state.document_service
-
-
-def get_document_ingestion_service(
-    request: Request,
-) -> DocumentIngestionService:
-    """Returns the document ingestion service for this request."""
-    return request.app.state.document_ingestion_service
 
 
 def document_not_found() -> HTTPException:
@@ -74,21 +68,21 @@ def document_limit_exceeded(detail: str) -> HTTPException:
 
 
 async def clean_up_uploaded_documents(
-    document_service: DocumentService,
-    ingestion_service: DocumentIngestionService,
+    request: Request,
     documents: list[DocumentMetadata],
     chunk_ids_by_document_id: dict[UUID, list[str]],
 ) -> None:
     """Removes all state created by a failed multi-document upload."""
     for document in reversed(documents):
         try:
-            await ingestion_service.delete(
-                chunk_ids_by_document_id.get(document.id, [])
+            await delete_document_vectors(
+                request.app.state.vector_store.adelete,
+                chunk_ids_by_document_id.get(document.id, []),
             )
         except DocumentIngestionError:
             logger.exception("Unable to remove uploaded document vectors")
         try:
-            document_service.delete(document.id)
+            delete_document(request.app.state.upload_directory, document.id)
         except DocumentStorageError:
             logger.exception("Unable to remove uploaded document content")
 
@@ -98,12 +92,9 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.post("/embed", response_model=DocumentsResponse, status_code=201)
 async def upload_documents(
-    request: Request,
-    files: Annotated[list[UploadFile], File()],
+    request: Request, files: Annotated[list[UploadFile], File()]
 ) -> DocumentsResponse:
     """Stores and indexes uploaded documents atomically."""
-    document_service = get_document_service(request)
-    ingestion_service = get_document_ingestion_service(request)
     if len(files) > request.app.state.maximum_document_count:
         raise document_limit_exceeded("Too many documents in one upload")
     file_sizes = [file.size for file in files]
@@ -121,48 +112,48 @@ async def upload_documents(
     chunk_ids_by_document_id: dict[UUID, list[str]] = {}
     try:
         for file in files:
-            document = await document_service.save(file)
+            document = await save_document(
+                request.app.state.upload_directory,
+                request.app.state.maximum_document_size_bytes,
+                file,
+            )
             uploaded_documents.append(document)
-            chunk_ids = await ingestion_service.ingest(
-                document, document_service.content_path(document.id)
+            chunk_ids = await ingest_document(
+                request.app.state.vector_store.aadd_documents,
+                request.app.state.vector_store.adelete,
+                document,
+                content_path(request.app.state.upload_directory, document.id),
+                request.app.state.document_chunk_size,
+                request.app.state.document_chunk_overlap,
+                request.app.state.document_maximum_chunks,
+                request.app.state.embedding_batch_size,
             )
             chunk_ids_by_document_id[document.id] = chunk_ids
-            document = document_service.set_chunk_ids(document, chunk_ids)
-            uploaded_documents[-1] = document
+            uploaded_documents[-1] = set_chunk_ids(
+                request.app.state.upload_directory, document, chunk_ids
+            )
     except DocumentTooLargeError as error:
         await clean_up_uploaded_documents(
-            document_service,
-            ingestion_service,
-            uploaded_documents,
-            chunk_ids_by_document_id,
+            request, uploaded_documents, chunk_ids_by_document_id
         )
         raise HTTPException(
             status_code=413, detail="Document exceeds maximum allowed size"
         ) from error
     except DocumentIngestionLimitError as error:
         await clean_up_uploaded_documents(
-            document_service,
-            ingestion_service,
-            uploaded_documents,
-            chunk_ids_by_document_id,
+            request, uploaded_documents, chunk_ids_by_document_id
         )
         raise document_limit_exceeded(
             "Document exceeds maximum allowed chunk count"
         ) from error
     except DocumentIngestionError as error:
         await clean_up_uploaded_documents(
-            document_service,
-            ingestion_service,
-            uploaded_documents,
-            chunk_ids_by_document_id,
+            request, uploaded_documents, chunk_ids_by_document_id
         )
         raise document_ingestion_unavailable(error) from error
     except DocumentStorageError as error:
         await clean_up_uploaded_documents(
-            document_service,
-            ingestion_service,
-            uploaded_documents,
-            chunk_ids_by_document_id,
+            request, uploaded_documents, chunk_ids_by_document_id
         )
         raise document_storage_unavailable(error) from error
     return DocumentsResponse(
@@ -175,15 +166,15 @@ async def upload_documents(
 
 @router.get("/", response_model=DocumentsResponse)
 def get_documents(
-    request: Request,
-    ids: Annotated[list[UUID], Query(min_length=1)],
+    request: Request, ids: Annotated[list[UUID], Query(min_length=1)]
 ) -> DocumentsResponse:
     """Returns metadata for the requested documents."""
     try:
-        document_service = get_document_service(request)
         documents = []
         for document_id in ids:
-            document = document_service.get_metadata(document_id)
+            document = get_metadata(
+                request.app.state.upload_directory, document_id
+            )
             if document is None:
                 raise document_not_found()
             documents.append(DocumentResponse.model_validate(document))
@@ -193,11 +184,12 @@ def get_documents(
 
 
 @router.get("/ids", response_model=DocumentIdsResponse)
-async def get_all_ids(request: Request) -> DocumentIdsResponse:
+async def get_all_document_ids(request: Request) -> DocumentIdsResponse:
     """Returns identifiers for all valid stored documents."""
     try:
-        document_service = get_document_service(request)
-        return DocumentIdsResponse(ids=document_service.get_all_ids())
+        return DocumentIdsResponse(
+            ids=get_all_ids(request.app.state.upload_directory)
+        )
     except DocumentStorageError as error:
         raise document_storage_unavailable(error) from error
 
@@ -206,12 +198,11 @@ async def get_all_ids(request: Request) -> DocumentIdsResponse:
 def download_document(document_id: UUID, request: Request) -> FileResponse:
     """Returns the content of a stored document."""
     try:
-        document_service = get_document_service(request)
-        document = document_service.get_metadata(document_id)
+        document = get_metadata(request.app.state.upload_directory, document_id)
         if document is None:
             raise document_not_found()
         return FileResponse(
-            document_service.content_path(document_id),
+            content_path(request.app.state.upload_directory, document_id),
             media_type=document.content_type,
             filename=document.filename,
         )
@@ -220,15 +211,18 @@ def download_document(document_id: UUID, request: Request) -> FileResponse:
 
 
 @router.delete("/{document_id}", status_code=204)
-async def delete_document(document_id: UUID, request: Request) -> Response:
+async def delete_stored_document(
+    document_id: UUID, request: Request
+) -> Response:
     """Removes a document and its indexed chunks."""
     try:
-        document_service = get_document_service(request)
-        document = document_service.get_metadata(document_id)
+        document = get_metadata(request.app.state.upload_directory, document_id)
         if document is None:
             raise document_not_found()
-        await get_document_ingestion_service(request).delete(document.chunk_ids)
-        document_service.delete(document_id)
+        await delete_document_vectors(
+            request.app.state.vector_store.adelete, document.chunk_ids
+        )
+        delete_document(request.app.state.upload_directory, document_id)
         return Response(status_code=204)
     except DocumentStorageError as error:
         raise document_storage_unavailable(error) from error

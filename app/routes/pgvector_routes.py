@@ -12,7 +12,7 @@ SUPPORTED_TABLES = frozenset(
 
 def get_engine(request: Request) -> AsyncEngine:
     """Returns the application's pgvector database engine."""
-    return request.app.state.vector_store.engine
+    return request.app.state.engine
 
 
 def validate_table_name(table_name: str) -> str:
