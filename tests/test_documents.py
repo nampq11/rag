@@ -88,7 +88,12 @@ def send_request(
 
 @pytest.fixture(autouse=True)
 def document_service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    local_files_directory = tmp_path.parent / f"{tmp_path.name}-local-files"
+    local_files_directory.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(app.state, "upload_directory", tmp_path)
+    monkeypatch.setattr(
+        app.state, "local_files_directory", local_files_directory
+    )
     monkeypatch.setattr(app.state, "maximum_document_size_bytes", 1024)
     monkeypatch.setattr(app.state, "vector_store", InMemoryVectorStore())
 
@@ -99,6 +104,22 @@ def upload_document(filename: str, content: bytes) -> dict[str, object]:
         "/documents/embed",
         headers={"Authorization": f"Bearer {create_access_token()}"},
         files={"files": (filename, content, "text/plain")},
+    )
+
+    assert response.status_code == 201
+    return response.json()["documents"][0]
+
+
+def embed_local_file(
+    path: str, entity_id: str | None = None
+) -> dict[str, object]:
+    params = {"entity_id": entity_id} if entity_id is not None else None
+    response = send_request(
+        "POST",
+        "/documents/local/embed",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        json={"path": path},
+        params=params,
     )
 
     assert response.status_code == 201
@@ -398,3 +419,139 @@ def test_get_documents_by_ids_returns_not_found_for_unknown_id() -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Document not found"}
+
+
+def test_embed_local_file_stores_and_indexes_a_server_file() -> None:
+    local_files_directory = app.state.local_files_directory
+    (local_files_directory / "notes.txt").write_bytes(b"important notes")
+
+    embedded_document = embed_local_file("notes.txt")
+    document_id = embedded_document["id"]
+
+    assert UUID(document_id)
+    assert embedded_document == {
+        "id": document_id,
+        "filename": "notes.txt",
+        "content_type": "text/plain",
+        "size": 15,
+    }
+
+    metadata = get_metadata(app.state.upload_directory, UUID(document_id))
+    assert metadata is not None
+    assert metadata.chunk_ids == [f"{document_id}:0"]
+
+    get_response = send_request(
+        "GET",
+        f"/documents/{document_id}",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+    )
+    assert get_response.status_code == 200
+    assert get_response.content == b"important notes"
+
+
+def test_embed_local_file_returns_not_found_for_missing_path() -> None:
+    response = send_request(
+        "POST",
+        "/documents/local/embed",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        json={"path": "missing.txt"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Local document not found"}
+
+
+@pytest.mark.parametrize("traversal_path", ["/etc/passwd", "../../etc/passwd"])
+def test_embed_local_file_rejects_paths_outside_allowed_directory(
+    traversal_path: str,
+) -> None:
+    response = send_request(
+        "POST",
+        "/documents/local/embed",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        json={"path": traversal_path},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Local document is outside the allowed directory"
+    }
+
+
+def test_embed_local_file_rejects_symlinks_outside_allowed_directory(
+    tmp_path: Path,
+) -> None:
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_bytes(b"private notes")
+    (app.state.local_files_directory / "outside.txt").symlink_to(outside_file)
+
+    response = send_request(
+        "POST",
+        "/documents/local/embed",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        json={"path": "outside.txt"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Local document is outside the allowed directory"
+    }
+
+
+def test_embed_local_file_rejects_documents_larger_than_configured_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app.state, "maximum_document_size_bytes", 3)
+    (app.state.local_files_directory / "large.txt").write_bytes(b"four")
+
+    response = send_request(
+        "POST",
+        "/documents/local/embed",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        json={"path": "large.txt"},
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "detail": "Document exceeds maximum allowed size"
+    }
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_embed_local_file_removes_stored_copy_when_ingestion_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app.state, "vector_store", FailingVectorStore())
+    (app.state.local_files_directory / "notes.txt").write_bytes(
+        b"important notes"
+    )
+
+    response = send_request(
+        "POST",
+        "/documents/local/embed",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        json={"path": "notes.txt"},
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Document ingestion is unavailable"}
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_embed_local_file_accepts_entity_id_query_parameter() -> None:
+    (app.state.local_files_directory / "notes.txt").write_bytes(
+        b"important notes"
+    )
+
+    embedded_document = embed_local_file("notes.txt", entity_id="tenant-42")
+
+    assert embedded_document["filename"] == "notes.txt"
+
+
+def test_infer_content_type_returns_pdf_for_pdf_extension() -> None:
+    from app.utils.document_loader import infer_content_type
+
+    assert infer_content_type(Path("report.pdf")) == "application/pdf"
+    assert infer_content_type(Path("REPORT.PDF")) == "application/pdf"
+    assert infer_content_type(Path("notes.txt")) == "text/plain"
+    assert infer_content_type(Path("data")) == "text/plain"

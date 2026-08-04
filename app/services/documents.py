@@ -17,6 +17,10 @@ class DocumentTooLargeError(DocumentStorageError):
     """Indicates an upload exceeded the configured size limit."""
 
 
+class LocalDocumentAccessError(RuntimeError):
+    """Indicates a local file path resolved outside the allowed directory."""
+
+
 def initialize_storage(directory: Path) -> None:
     """Creates the document storage directory when needed."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -125,6 +129,65 @@ async def save_document(
         ) from error
     finally:
         await upload.close()
+
+
+def resolve_local_file_path(base_directory: Path, requested_path: str) -> Path:
+    """Resolves a local file path, rejecting anything outside the base directory.
+
+    Resolution collapses ``..`` segments and follows symlinks before the
+    boundary check, so traversal attempts and symlinks pointing outside the
+    base directory are both rejected.
+    """
+    resolved_base = base_directory.resolve()
+    resolved_path = (resolved_base / requested_path).resolve()
+    if not resolved_path.is_relative_to(resolved_base):
+        raise LocalDocumentAccessError(
+            "Local document is outside the allowed directory"
+        )
+    return resolved_path
+
+
+def save_local_file(
+    directory: Path,
+    maximum_size_bytes: int,
+    source_path: Path,
+    filename: str,
+    content_type: str,
+) -> DocumentMetadata:
+    """Stores a copy of a server-side file and its initial metadata."""
+    document_id = uuid4()
+    stored_content_path = content_path(directory, document_id)
+    temporary_content_path = stored_content_path.with_suffix(".uploading")
+    size = 0
+    try:
+        with (
+            temporary_content_path.open("wb") as destination,
+            source_path.open("rb") as source,
+        ):
+            while chunk := source.read(1024 * 1024):
+                if size + len(chunk) > maximum_size_bytes:
+                    raise DocumentTooLargeError(
+                        "Document exceeds maximum allowed size"
+                    )
+                size += len(chunk)
+                destination.write(chunk)
+
+        metadata = DocumentMetadata(
+            id=document_id,
+            filename=filename,
+            content_type=content_type,
+            size=size,
+            chunk_ids=[],
+        )
+        temporary_content_path.replace(stored_content_path)
+        write_metadata(directory, metadata)
+        return metadata
+    except DocumentStorageError:
+        _remove_document_files(directory, document_id)
+        raise
+    except OSError as error:
+        _remove_document_files(directory, document_id)
+        raise DocumentStorageError("Unable to store local document") from error
 
 
 def set_chunk_ids(

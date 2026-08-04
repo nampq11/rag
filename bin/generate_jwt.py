@@ -21,9 +21,7 @@ def parse_arguments() -> argparse.Namespace:
     """Parses JWT generation options."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--subject", default="local-dev")
-    parser.add_argument(
-        "--expires-in-hours", type=positive_integer, default=1
-    )
+    parser.add_argument("--expires-in-hours", type=positive_integer, default=1)
     return parser.parse_args()
 
 
@@ -32,12 +30,12 @@ def main() -> None:
     load_dotenv()
     secret_key = os.environ.get("JWT_SECRET_KEY")
     if not secret_key:
-        raise RuntimeError("JWT_SECRET_KEY must be set in the environment or .env")
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be set in the environment or .env"
+        )
 
     arguments = parse_arguments()
-    expires_at = datetime.now(UTC) + timedelta(
-        hours=arguments.expires_in_hours
-    )
+    expires_at = datetime.now(UTC) + timedelta(hours=arguments.expires_in_hours)
     token = jwt.encode(
         {"sub": arguments.subject, "exp": expires_at},
         secret_key,
