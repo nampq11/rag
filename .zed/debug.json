@@ -1,0 +1,16 @@
+[
+  {
+    "label": "Debug FastAPI",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "module": "uvicorn",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "args": [
+      "main:app",
+      "--port",
+      "8000",
+      "--reload"
+    ],
+    "justMyCode": true
+  }
+]
