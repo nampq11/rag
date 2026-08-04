@@ -2,9 +2,11 @@ services:
   fastapi:
     build: .
     environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-500}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-mydatabase}
+      POSTGRES_USER: ${POSTGRES_USER:-myuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
     ports:
       - "8000:8000"
     volumes:

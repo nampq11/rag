@@ -12,7 +12,7 @@ os.environ.setdefault(
     "JWT_SECRET_KEY", "test-secret-key-must-be-at-least-32-characters"
 )
 
-from main import app
+from main import app, vector_store
 
 
 def request(path: str, token: str | None = None) -> httpx.Response:
@@ -42,7 +42,10 @@ def test_public_routes_do_not_require_a_jwt(path: str) -> None:
     assert response.status_code == 200
 
 
-def test_cors_allows_authorized_requests_from_configured_origin() -> None:
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_cors_allows_document_api_methods_from_configured_origin(
+    method: str,
+) -> None:
     async def send_preflight_request() -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -52,7 +55,7 @@ def test_cors_allows_authorized_requests_from_configured_origin() -> None:
                 "/",
                 headers={
                     "Origin": "https://frontend.example.com",
-                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Method": method,
                     "Access-Control-Request-Headers": "Authorization",
                 },
             )
@@ -86,6 +89,62 @@ def test_health_check_returns_ok_without_a_jwt() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_readiness_check_returns_ok_when_database_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def successful_health_check() -> None:
+        pass
+
+    monkeypatch.setattr(vector_store, "check_health", successful_health_check)
+
+    response = request("/check/")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_readiness_check_returns_unavailable_when_database_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_health_check() -> None:
+        raise OSError("Database is unavailable")
+
+    monkeypatch.setattr(vector_store, "check_health", fail_health_check)
+    response = request("/check/")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database is unavailable"}
+
+
+def test_openapi_documents_bearer_authentication() -> None:
+    schema = request("/openapi.json").json()
+
+    assert schema["components"]["securitySchemes"]["BearerAuth"] == {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+    }
+    assert schema["paths"]["/db/tables"]["get"]["security"] == [
+        {"BearerAuth": []}
+    ]
+    assert "security" not in schema["paths"]["/health"]["get"]
+
+
+def test_openapi_renders_document_uploads_as_files() -> None:
+    schema = request("/openapi.json").json()
+    request_body = schema["paths"]["/documents/embed"]["post"]["requestBody"]
+    schema_reference = request_body["content"]["multipart/form-data"][
+        "schema"
+    ]["$ref"]
+    component_name = schema_reference.rsplit("/", maxsplit=1)[1]
+    files = schema["components"]["schemas"][component_name]["properties"][
+        "files"
+    ]
+
+    assert files["items"] == {"type": "string", "format": "binary"}
+
+
+
 def test_server_configuration_uses_environment_variables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -98,3 +157,25 @@ def test_server_configuration_uses_environment_variables(
 
     assert config.api_host == "127.0.0.1"
     assert config.api_port == 9000
+
+
+def test_database_url_encodes_reserved_password_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import config
+
+    with monkeypatch.context() as environment:
+        environment.delenv("DATABASE_URL", raising=False)
+        environment.setenv("POSTGRES_HOST", "database.example.com")
+        environment.setenv("POSTGRES_PORT", "5432")
+        environment.setenv("POSTGRES_DB", "rag")
+        environment.setenv("POSTGRES_USER", "rag-user")
+        environment.setenv("POSTGRES_PASSWORD", "p@ss/?#%word")
+        importlib.reload(config)
+
+        assert config.database_url == (
+            "postgresql+asyncpg://rag-user:p%40ss%2F%3F%23%25word"
+            "@database.example.com:5432/rag"
+        )
+
+    importlib.reload(config)

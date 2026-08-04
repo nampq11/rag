@@ -1,3 +1,5 @@
+"""JWT authentication middleware for the API."""
+
 import os
 
 import jwt
@@ -6,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import logger
 
-PUBLIC_PATHS = frozenset({"/docs", "/openapi.json", "/health"})
+PUBLIC_PATHS = frozenset({"/docs", "/openapi.json", "/health", "/check"})
 
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 if not JWT_SECRET_KEY:
@@ -15,6 +17,7 @@ if not JWT_SECRET_KEY:
 
 
 def unauthorized_response(detail: str) -> JSONResponse:
+    """Builds the standard unauthorized API response."""
     return JSONResponse(
         status_code=401,
         content={"detail": detail},
@@ -23,7 +26,8 @@ def unauthorized_response(detail: str) -> JSONResponse:
 
 
 async def security_middleware(request: Request, call_next):
-    if request.url.path in PUBLIC_PATHS:
+    """Authenticates protected requests with a JWT bearer token."""
+    if request.url.path.rstrip("/") in PUBLIC_PATHS:
         return await call_next(request)
 
     authorization = request.headers.get("Authorization", "")
@@ -42,10 +46,14 @@ async def security_middleware(request: Request, call_next):
             options={"require": ["exp"]},
         )
     except jwt.ExpiredSignatureError:
-        logger.warning("Unauthorized request to %s: expired token", request.url.path)
+        logger.warning(
+            "Unauthorized request to %s: expired token", request.url.path
+        )
         return unauthorized_response("Bearer token has expired")
     except jwt.InvalidTokenError:
-        logger.warning("Unauthorized request to %s: invalid token", request.url.path)
+        logger.warning(
+            "Unauthorized request to %s: invalid token", request.url.path
+        )
         return unauthorized_response("Bearer token is invalid")
 
     request.state.user = payload

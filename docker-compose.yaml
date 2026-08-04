@@ -1,27 +1,35 @@
 services:
   db:
-    image: pgvector/pgvector:latest
+    image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: mydatabase
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: ${POSTGRES_DB:-mydatabase}
+      POSTGRES_USER: ${POSTGRES_USER:-myuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
     volumes:
       - pgdata2:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   fastapi:
     build: .
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-500}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-mydatabase}
+      POSTGRES_USER: ${POSTGRES_USER:-myuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
     ports:
       - "8000:8000"
     volumes:
       - ./uploads:/app/uploads
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
 
