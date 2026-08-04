@@ -1,7 +1,7 @@
 """PGVector adapter for document chunks."""
 
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from langchain_postgres import PGVector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -15,9 +15,11 @@ class PgVectorDocumentStore:
         database_url: str,
         collection_name: str,
         embedding_model: str,
+        ollama_base_url: str,
     ) -> None:
         self.collection_name = collection_name
         self.embedding_model = embedding_model
+        self.ollama_base_url = ollama_base_url
         self.engine: AsyncEngine = create_async_engine(database_url)
         self._vector_store: PGVector | None = None
 
@@ -25,7 +27,10 @@ class PgVectorDocumentStore:
     def vector_store(self) -> PGVector:
         """Returns the initialized PGVector client."""
         if self._vector_store is None:
-            embeddings = OpenAIEmbeddings(model=self.embedding_model)
+            embeddings = OllamaEmbeddings(
+                model=self.embedding_model,
+                base_url=self.ollama_base_url,
+            )
             self._vector_store = PGVector(
                 embeddings=embeddings,
                 connection=self.engine,

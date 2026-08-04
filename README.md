@@ -4,14 +4,22 @@ FastAPI service that stores uploaded documents locally and indexes their LangCha
 
 ## Run
 
-1. Copy `.env.example` to `.env` and set `JWT_SECRET_KEY` and `OPENAI_API_KEY`.
-2. Start the application and database:
+1. Copy `.env.example` to `.env` and set `JWT_SECRET_KEY`.
+2. Set `OLLAMA_BASE_URL` in `.env` to the URL of an Ollama endpoint that serves the model:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+The default `EMBEDDING_MODEL` is `hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF`.
+
+3. Start the application and database:
 
 ```bash
 docker compose up --build
 ```
 
-PostgreSQL is available on port `5433` from the host. API startup enables the pgvector extension, provisions the LangChain collection, and fails readiness if the database is unavailable or the application database role cannot create the extension.
+PostgreSQL is available on the host port configured by `POSTGRES_PORT` (default `5434`). API startup enables the pgvector extension, provisions the LangChain collection, and fails readiness if the database is unavailable or the application database role cannot create the extension.
 
 ## Document ingestion
 

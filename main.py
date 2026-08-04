@@ -19,6 +19,7 @@ from app.config import (
     maximum_document_count,
     maximum_document_size_bytes,
     maximum_total_document_size_bytes,
+    ollama_base_url,
     upload_directory,
     vector_collection_name,
 )
@@ -30,7 +31,10 @@ from app.services.ingestion import DocumentIngestionService
 from app.services.vector_store import PgVectorDocumentStore
 
 vector_store = PgVectorDocumentStore(
-    database_url, vector_collection_name, embedding_model
+    database_url,
+    vector_collection_name,
+    embedding_model,
+    ollama_base_url,
 )
 
 

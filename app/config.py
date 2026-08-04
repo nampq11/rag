@@ -39,7 +39,11 @@ default_database_url = URL.create(
 ).render_as_string(hide_password=False)
 database_url = os.environ.get("DATABASE_URL", default_database_url)
 vector_collection_name = os.environ.get("VECTOR_COLLECTION_NAME", "documents")
-embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+embedding_model = os.environ.get(
+    "EMBEDDING_MODEL",
+    "hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF",
+)
+ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 document_chunk_size = positive_integer_setting("DOCUMENT_CHUNK_SIZE", 1000)
 document_chunk_overlap = int(os.environ.get("DOCUMENT_CHUNK_OVERLAP", "200"))
 document_maximum_chunks = positive_integer_setting(
