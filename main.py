@@ -3,8 +3,15 @@ import os
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
-from app.config import api_host, api_port
+from app.config import (
+    api_host,
+    api_port,
+    maximum_document_size_bytes,
+    upload_directory,
+)
 from app.middleware import security_middleware
+from app.routes.document_routes import router as documents_router
+from app.services.documents import DocumentService
 
 
 def get_allowed_origins() -> list[str]:
@@ -13,7 +20,11 @@ def get_allowed_origins() -> list[str]:
 
 
 app = FastAPI(title="RAG API")
+app.state.document_service = DocumentService(
+    upload_directory, maximum_document_size_bytes
+)
 app.middleware("http")(security_middleware)
+app.include_router(documents_router)
 
 allowed_origins = get_allowed_origins()
 if allowed_origins:
@@ -21,7 +32,7 @@ if allowed_origins:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
@@ -33,6 +44,11 @@ async def health_check() -> dict[str, str]:
 
 @app.get("/health")
 async def health_check_status() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/check/")
+async def check() -> dict[str, str]:
     return {"status": "ok"}
 
 

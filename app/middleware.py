@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import logger
 
-PUBLIC_PATHS = frozenset({"/docs", "/openapi.json", "/health"})
+PUBLIC_PATHS = frozenset({"/docs", "/openapi.json", "/health", "/check"})
 
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 if not JWT_SECRET_KEY:
@@ -23,7 +23,7 @@ def unauthorized_response(detail: str) -> JSONResponse:
 
 
 async def security_middleware(request: Request, call_next):
-    if request.url.path in PUBLIC_PATHS:
+    if request.url.path.rstrip("/") in PUBLIC_PATHS:
         return await call_next(request)
 
     authorization = request.headers.get("Authorization", "")

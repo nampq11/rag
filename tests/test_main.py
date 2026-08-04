@@ -42,7 +42,8 @@ def test_public_routes_do_not_require_a_jwt(path: str) -> None:
     assert response.status_code == 200
 
 
-def test_cors_allows_authorized_requests_from_configured_origin() -> None:
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_cors_allows_document_api_methods_from_configured_origin(method: str) -> None:
     async def send_preflight_request() -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -52,7 +53,7 @@ def test_cors_allows_authorized_requests_from_configured_origin() -> None:
                 "/",
                 headers={
                     "Origin": "https://frontend.example.com",
-                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Method": method,
                     "Access-Control-Request-Headers": "Authorization",
                 },
             )
