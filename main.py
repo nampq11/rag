@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
+from app.config import api_host, api_port
 from app.middleware import security_middleware
 
 
@@ -33,3 +34,9 @@ async def health_check() -> dict[str, str]:
 @app.get("/health")
 async def health_check_status() -> dict[str, str]:
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host=api_host, port=api_port)

@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -83,3 +84,17 @@ def test_health_check_returns_ok_without_a_jwt() -> None:
     response = request("/health")
 
     assert response.json() == {"status": "ok"}
+
+
+def test_server_configuration_uses_environment_variables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import config
+
+    monkeypatch.setenv("API_HOST", "127.0.0.1")
+    monkeypatch.setenv("API_PORT", "9000")
+
+    importlib.reload(config)
+
+    assert config.api_host == "127.0.0.1"
+    assert config.api_port == 9000
