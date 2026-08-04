@@ -11,9 +11,3 @@ services:
       - ./uploads:/app/uploads
     env_file:
       - .env
-    networks:
-      - rag-network
-
-networks:
-  rag-network:
-    name: rag-network
