@@ -12,7 +12,7 @@ os.environ.setdefault(
     "JWT_SECRET_KEY", "test-secret-key-must-be-at-least-32-characters"
 )
 
-from main import app
+from main import app, vector_store
 
 
 def request(path: str, token: str | None = None) -> httpx.Response:
@@ -87,6 +87,30 @@ def test_health_check_returns_ok_without_a_jwt() -> None:
     response = request("/health")
 
     assert response.json() == {"status": "ok"}
+
+
+def test_readiness_check_returns_ok_when_database_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(vector_store, "check_health", lambda: None)
+
+    response = request("/check/")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_readiness_check_returns_unavailable_when_database_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_health_check() -> None:
+        raise OSError("Database is unavailable")
+
+    monkeypatch.setattr(vector_store, "check_health", fail_health_check)
+    response = request("/check/")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database is unavailable"}
 
 
 def test_server_configuration_uses_environment_variables(

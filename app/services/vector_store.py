@@ -3,6 +3,7 @@
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
+from sqlalchemy import Engine, create_engine, text
 
 
 class PgVectorDocumentStore:
@@ -17,6 +18,7 @@ class PgVectorDocumentStore:
         self.database_url = database_url
         self.collection_name = collection_name
         self.embedding_model = embedding_model
+        self.engine: Engine = create_engine(database_url)
         self._vector_store: PGVector | None = None
 
     @property
@@ -26,7 +28,7 @@ class PgVectorDocumentStore:
             embeddings = OpenAIEmbeddings(model=self.embedding_model)
             self._vector_store = PGVector(
                 embeddings=embeddings,
-                connection=self.database_url,
+                connection=self.engine,
                 collection_name=self.collection_name,
                 use_jsonb=True,
                 create_extension=True,
@@ -36,6 +38,15 @@ class PgVectorDocumentStore:
     def provision(self) -> None:
         """Initializes the PGVector collection."""
         _ = self.vector_store
+
+    def check_health(self) -> None:
+        """Raises when PostgreSQL is unavailable."""
+        with self.engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+    def close(self) -> None:
+        """Releases PostgreSQL connections."""
+        self.engine.dispose()
 
     def add_documents(self, documents: list[Document], ids: list[str]) -> None:
         """Adds document chunks to the vector store."""

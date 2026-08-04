@@ -65,7 +65,7 @@ class FailingDeleteDocumentIngestionService(PersistingDocumentIngestionService):
         raise DocumentIngestionError("Database is unavailable")
 
 
-from main import app
+from main import app, vector_store
 
 
 def create_access_token() -> str:
@@ -117,7 +117,9 @@ def upload_document(filename: str, content: bytes) -> dict[str, object]:
     return response.json()["documents"][0]
 
 
-def test_check_is_public() -> None:
+def test_check_is_public(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(vector_store, "check_health", lambda: None)
+
     response = send_request("GET", "/check/")
 
     assert response.status_code == 200

@@ -4,7 +4,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from starlette.middleware.cors import CORSMiddleware
 
 from app.config import (
@@ -16,6 +16,7 @@ from app.config import (
     document_maximum_chunks,
     embedding_batch_size,
     embedding_model,
+    logger,
     maximum_document_count,
     maximum_document_size_bytes,
     maximum_total_document_size_bytes,
@@ -37,7 +38,10 @@ vector_store = PgVectorDocumentStore(
 async def lifespan(_: FastAPI):
     """Initializes application dependencies for the process lifetime."""
     await asyncio.to_thread(vector_store.provision)
-    yield
+    try:
+        yield
+    finally:
+        vector_store.close()
 
 
 def get_allowed_origins() -> list[str]:
@@ -91,7 +95,14 @@ async def health_check_status() -> dict[str, str]:
 
 @app.get("/check/")
 async def check() -> dict[str, str]:
-    """Returns the public readiness status."""
+    """Returns readiness based on PostgreSQL availability."""
+    try:
+        await asyncio.to_thread(vector_store.check_health)
+    except Exception as error:
+        logger.exception("PostgreSQL readiness check failed")
+        raise HTTPException(
+            status_code=503, detail="Database is unavailable"
+        ) from error
     return {"status": "ok"}
 
 
