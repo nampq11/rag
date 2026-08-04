@@ -16,6 +16,7 @@ from app.config import (
     document_maximum_chunks,
     embedding_batch_size,
     embedding_model,
+    local_files_directory,
     logger,
     maximum_document_count,
     maximum_document_size_bytes,
@@ -66,9 +67,11 @@ def get_allowed_origins() -> list[str]:
 def configure_application(application: FastAPI) -> None:
     """Stores application-wide dependencies and settings."""
     initialize_storage(upload_directory)
+    initialize_storage(local_files_directory)
     application.state.engine = engine
     application.state.vector_store = vector_store
     application.state.upload_directory = upload_directory
+    application.state.local_files_directory = local_files_directory
     application.state.maximum_document_size_bytes = maximum_document_size_bytes
     application.state.document_chunk_size = document_chunk_size
     application.state.document_chunk_overlap = document_chunk_overlap

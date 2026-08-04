@@ -47,6 +47,12 @@ class QueryRequestBody(BaseModel):
     file_id: UUID
 
 
+class StoreDocument(BaseModel):
+    """Carries the path of a file already present on the server."""
+
+    path: str = Field(min_length=1)
+
+
 class QueryResultItem(BaseModel):
     """Represents a retrieved document chunk returned by a query."""
 

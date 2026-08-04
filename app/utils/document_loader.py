@@ -15,3 +15,10 @@ def load_document(metadata: DocumentMetadata, path: Path) -> list[Document]:
     if metadata.content_type == DocumentContentType.PDF:
         return PyPDFLoader(str(path)).load()
     return TextLoader(str(path), autodetect_encoding=True).load()
+
+
+def infer_content_type(path: Path) -> str:
+    """Guesses the content type of a local file from its filename extension."""
+    if path.suffix.lower() == ".pdf":
+        return DocumentContentType.PDF
+    return DocumentContentType.TEXT

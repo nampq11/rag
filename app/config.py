@@ -21,6 +21,9 @@ def positive_integer_setting(name: str, default: int) -> int:
 api_host = os.environ.get("API_HOST", "0.0.0.0")
 api_port = int(os.environ.get("API_PORT", "8000"))
 upload_directory = Path(os.environ.get("UPLOAD_DIRECTORY", "uploads"))
+local_files_directory = Path(
+    os.environ.get("LOCAL_FILES_DIRECTORY", "local_files")
+)
 maximum_document_size_bytes = positive_integer_setting(
     "MAXIMUM_DOCUMENT_SIZE_BYTES", 10 * 1024 * 1024
 )

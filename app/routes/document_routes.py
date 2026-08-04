@@ -24,15 +24,19 @@ from app.models import (
     QueryRequestBody,
     QueryResponse,
     QueryResultItem,
+    StoreDocument,
 )
 from app.services.documents import (
     DocumentStorageError,
     DocumentTooLargeError,
+    LocalDocumentAccessError,
     content_path,
     delete_document,
     get_all_ids,
     get_metadata,
+    resolve_local_file_path,
     save_document,
+    save_local_file,
     set_chunk_ids,
 )
 from app.services.ingestion import (
@@ -42,6 +46,7 @@ from app.services.ingestion import (
     ingest_document,
 )
 from app.services.vector_store import get_cached_query_embedding
+from app.utils.document_loader import infer_content_type
 
 
 def document_not_found() -> HTTPException:
@@ -169,6 +174,72 @@ async def upload_documents(
     )
 
 
+@router.post("/local/embed", response_model=DocumentsResponse, status_code=201)
+async def embed_local_file(
+    document: StoreDocument,
+    request: Request,
+    entity_id: str | None = None,
+) -> DocumentsResponse:
+    """Stores and indexes a file that is already present on the server."""
+    try:
+        source_path = resolve_local_file_path(
+            request.app.state.local_files_directory, document.path
+        )
+    except LocalDocumentAccessError as error:
+        raise HTTPException(
+            status_code=403,
+            detail="Local document is outside the allowed directory",
+        ) from error
+    if not source_path.is_file():
+        raise HTTPException(status_code=404, detail="Local document not found")
+
+    try:
+        stored_document = save_local_file(
+            request.app.state.upload_directory,
+            request.app.state.maximum_document_size_bytes,
+            source_path,
+            source_path.name or "unnamed",
+            infer_content_type(source_path),
+        )
+    except DocumentTooLargeError as error:
+        raise HTTPException(
+            status_code=413, detail="Document exceeds maximum allowed size"
+        ) from error
+    except DocumentStorageError as error:
+        raise document_storage_unavailable(error) from error
+
+    try:
+        chunk_ids = await ingest_document(
+            request.app.state.vector_store.aadd_documents,
+            request.app.state.vector_store.adelete,
+            stored_document,
+            content_path(
+                request.app.state.upload_directory, stored_document.id
+            ),
+            request.app.state.document_chunk_size,
+            request.app.state.document_chunk_overlap,
+            request.app.state.document_maximum_chunks,
+            request.app.state.embedding_batch_size,
+        )
+        stored_document = set_chunk_ids(
+            request.app.state.upload_directory, stored_document, chunk_ids
+        )
+    except DocumentIngestionLimitError as error:
+        await clean_up_uploaded_documents(request, [stored_document], {})
+        raise document_limit_exceeded(
+            "Document exceeds maximum allowed chunk count"
+        ) from error
+    except DocumentIngestionError as error:
+        await clean_up_uploaded_documents(request, [stored_document], {})
+        raise document_ingestion_unavailable(error) from error
+    except DocumentStorageError as error:
+        await clean_up_uploaded_documents(request, [stored_document], {})
+        raise document_storage_unavailable(error) from error
+    return DocumentsResponse(
+        documents=[DocumentResponse.model_validate(stored_document)]
+    )
+
+
 @router.get("/", response_model=DocumentsResponse)
 def get_documents(
     request: Request, ids: Annotated[list[UUID], Query(min_length=1)]
@@ -238,9 +309,7 @@ async def delete_stored_document(
 def document_query_metadata(metadata: dict[str, object]) -> dict[str, str]:
     """Exposes chunk metadata as strings while dropping the on-disk source path."""
     return {
-        key: str(value)
-        for key, value in metadata.items()
-        if key != "source"
+        key: str(value) for key, value in metadata.items() if key != "source"
     }
 
 
