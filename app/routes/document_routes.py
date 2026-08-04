@@ -1,5 +1,6 @@
 """HTTP endpoints for document storage and ingestion."""
 
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
@@ -20,6 +21,9 @@ from app.models import (
     DocumentMetadata,
     DocumentResponse,
     DocumentsResponse,
+    QueryRequestBody,
+    QueryResponse,
+    QueryResultItem,
 )
 from app.services.documents import (
     DocumentStorageError,
@@ -37,6 +41,7 @@ from app.services.ingestion import (
     delete_document_vectors,
     ingest_document,
 )
+from app.services.vector_store import get_cached_query_embedding
 
 
 def document_not_found() -> HTTPException:
@@ -228,3 +233,54 @@ async def delete_stored_document(
         raise document_storage_unavailable(error) from error
     except DocumentIngestionError as error:
         raise document_ingestion_unavailable(error) from error
+
+
+def document_query_metadata(metadata: dict[str, object]) -> dict[str, str]:
+    """Exposes chunk metadata as strings while dropping the on-disk source path."""
+    return {
+        key: str(value)
+        for key, value in metadata.items()
+        if key != "source"
+    }
+
+
+@router.post("/query", response_model=QueryResponse)
+async def query_embeddings_by_file_id(
+    body: QueryRequestBody, request: Request
+) -> QueryResponse:
+    """Returns the chunks of a document that best match a natural-language query."""
+    try:
+        document_exists = (
+            get_metadata(request.app.state.upload_directory, body.file_id)
+            is not None
+        )
+    except DocumentStorageError as error:
+        raise document_storage_unavailable(error) from error
+    if not document_exists:
+        raise document_not_found()
+
+    vector_store = request.app.state.vector_store
+    try:
+        embedding = await asyncio.to_thread(
+            get_cached_query_embedding, body.query
+        )
+        documents = await vector_store.asimilarity_search_by_vector(
+            embedding=embedding,
+            filter={"document_id": str(body.file_id)},
+        )
+        return QueryResponse(
+            query=body.query,
+            file_id=body.file_id,
+            results=[
+                QueryResultItem(
+                    content=document.page_content,
+                    metadata=document_query_metadata(document.metadata),
+                )
+                for document in documents
+            ],
+        )
+    except Exception as error:
+        logger.exception("Document query failed")
+        raise HTTPException(
+            status_code=500, detail="Document query is unavailable"
+        ) from error
