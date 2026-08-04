@@ -7,3 +7,5 @@ myenv/
 venv/
 *.pyc
 dev.yml
+.ruff_cache/
+.pi/todos/

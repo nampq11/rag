@@ -1,6 +1,8 @@
-def main():
-    print("Hello from rag!")
+from fastapi import FastAPI
+
+app = FastAPI(title="RAG API")
 
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+async def health_check() -> dict[str, str]:
+    return {"message": "RAG API is running"}
