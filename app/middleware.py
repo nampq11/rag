@@ -14,6 +14,14 @@ if not JWT_SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY must be set")
 
 
+def unauthorized_response(detail: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content={"detail": detail},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def security_middleware(request: Request, call_next):
     if request.url.path in PUBLIC_PATHS:
         return await call_next(request)
@@ -24,11 +32,7 @@ async def security_middleware(request: Request, call_next):
         logger.warning(
             "Unauthorized request to %s: missing Bearer token", request.url.path
         )
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Bearer token is required"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return unauthorized_response("Bearer token is required")
 
     try:
         payload = jwt.decode(
@@ -39,18 +43,10 @@ async def security_middleware(request: Request, call_next):
         )
     except jwt.ExpiredSignatureError:
         logger.warning("Unauthorized request to %s: expired token", request.url.path)
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Bearer token has expired"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return unauthorized_response("Bearer token has expired")
     except jwt.InvalidTokenError:
         logger.warning("Unauthorized request to %s: invalid token", request.url.path)
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Bearer token is invalid"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return unauthorized_response("Bearer token is invalid")
 
     request.state.user = payload
     logger.debug("Authenticated request to %s", request.url.path)
