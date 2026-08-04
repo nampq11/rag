@@ -116,6 +116,20 @@ def test_readiness_check_returns_unavailable_when_database_fails(
     assert response.json() == {"detail": "Database is unavailable"}
 
 
+def test_openapi_documents_bearer_authentication() -> None:
+    schema = request("/openapi.json").json()
+
+    assert schema["components"]["securitySchemes"]["BearerAuth"] == {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+    }
+    assert schema["paths"]["/db/tables"]["get"]["security"] == [
+        {"BearerAuth": []}
+    ]
+    assert "security" not in schema["paths"]["/health"]["get"]
+
+
 def test_server_configuration_uses_environment_variables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

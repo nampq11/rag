@@ -4,6 +4,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.openapi.utils import get_openapi
 from starlette.middleware.cors import CORSMiddleware
 
 from app.config import (
@@ -23,7 +24,7 @@ from app.config import (
     upload_directory,
     vector_collection_name,
 )
-from app.middleware import security_middleware
+from app.middleware import PUBLIC_PATHS, security_middleware
 from app.routes.document_routes import router as documents_router
 from app.routes.pgvector_routes import router as pgvector_router
 from app.services.documents import DocumentService
@@ -110,6 +111,33 @@ async def check() -> dict[str, str]:
             status_code=503, detail="Database is unavailable"
         ) from error
     return {"status": "ok"}
+
+
+def custom_openapi() -> dict[str, object]:
+    """Describes JWT authentication for protected API operations."""
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    components = schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    security_schemes["BearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+    }
+    for path, path_item in schema["paths"].items():
+        if path.rstrip("/") in PUBLIC_PATHS:
+            continue
+        for operation in path_item.values():
+            if isinstance(operation, dict):
+                operation["security"] = [{"BearerAuth": []}]
+
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
 
 
 if __name__ == "__main__":
