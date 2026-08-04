@@ -1,6 +1,5 @@
 """HTTP endpoints for document storage and ingestion."""
 
-from dataclasses import asdict
 from typing import Annotated
 from uuid import UUID
 
@@ -14,11 +13,15 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 
 from app.config import logger
-from app.services.documents import (
+from app.models import (
+    DocumentIdsResponse,
     DocumentMetadata,
+    DocumentResponse,
+    DocumentsResponse,
+)
+from app.services.documents import (
     DocumentService,
     DocumentStorageError,
     DocumentTooLargeError,
@@ -28,27 +31,6 @@ from app.services.ingestion import (
     DocumentIngestionLimitError,
     DocumentIngestionService,
 )
-
-
-class DocumentResponse(BaseModel):
-    """Represents document metadata returned by the API."""
-
-    id: UUID
-    filename: str
-    content_type: str
-    size: int
-
-
-class DocumentsResponse(BaseModel):
-    """Represents a collection of document metadata."""
-
-    documents: list[DocumentResponse]
-
-
-class DocumentIdsResponse(BaseModel):
-    """Represents a collection of document identifiers."""
-
-    ids: list[UUID]
 
 
 def get_document_service(request: Request) -> DocumentService:
@@ -185,7 +167,7 @@ async def upload_documents(
         raise document_storage_unavailable(error) from error
     return DocumentsResponse(
         documents=[
-            DocumentResponse(**asdict(document))
+            DocumentResponse.model_validate(document)
             for document in uploaded_documents
         ]
     )
@@ -204,7 +186,7 @@ def get_documents(
             document = document_service.get_metadata(document_id)
             if document is None:
                 raise document_not_found()
-            documents.append(DocumentResponse(**asdict(document)))
+            documents.append(DocumentResponse.model_validate(document))
         return DocumentsResponse(documents=documents)
     except DocumentStorageError as error:
         raise document_storage_unavailable(error) from error

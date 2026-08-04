@@ -1,22 +1,12 @@
 """Filesystem-backed document storage service."""
 
-import json
-from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import UploadFile
 
-
-@dataclass(frozen=True)
-class DocumentMetadata:
-    """Describes a stored document and its vector chunk identifiers."""
-
-    id: UUID
-    filename: str
-    content_type: str
-    size: int
-    chunk_ids: list[str]
+from app.constants import DocumentContentType
+from app.models import DocumentMetadata
 
 
 class DocumentStorageError(RuntimeError):
@@ -50,7 +40,7 @@ class DocumentService:
         )
         try:
             temporary_metadata_path.write_text(
-                json.dumps(asdict(metadata), default=str), encoding="utf-8"
+                metadata.model_dump_json(), encoding="utf-8"
             )
             temporary_metadata_path.replace(self.metadata_path(metadata.id))
         except OSError as error:
@@ -69,25 +59,14 @@ class DocumentService:
             raise DocumentStorageError("Document content is missing")
 
         try:
-            data = json.loads(metadata_path.read_text(encoding="utf-8"))
-            chunk_ids = data.get("chunk_ids", [])
-            if not isinstance(chunk_ids, list) or not all(
-                isinstance(chunk_id, str) for chunk_id in chunk_ids
-            ):
-                raise ValueError("Document metadata has invalid chunk IDs")
-            return DocumentMetadata(
-                id=UUID(data["id"]),
-                filename=data["filename"],
-                content_type=data["content_type"],
-                size=data["size"],
-                chunk_ids=chunk_ids,
+            return DocumentMetadata.model_validate_json(
+                metadata_path.read_text(encoding="utf-8")
             )
         except (
             OSError,
             KeyError,
             TypeError,
             ValueError,
-            json.JSONDecodeError,
         ) as error:
             raise DocumentStorageError(
                 "Unable to read document metadata"
@@ -134,7 +113,7 @@ class DocumentService:
             metadata = DocumentMetadata(
                 id=document_id,
                 filename=upload.filename or "unnamed",
-                content_type=upload.content_type or "application/octet-stream",
+                content_type=upload.content_type or DocumentContentType.BINARY,
                 size=size,
                 chunk_ids=[],
             )
@@ -166,7 +145,7 @@ class DocumentService:
         self, metadata: DocumentMetadata, chunk_ids: list[str]
     ) -> DocumentMetadata:
         """Persists vector chunk identifiers for a document."""
-        indexed_metadata = replace(metadata, chunk_ids=chunk_ids)
+        indexed_metadata = metadata.model_copy(update={"chunk_ids": chunk_ids})
         self.write_metadata(indexed_metadata)
         return indexed_metadata
 

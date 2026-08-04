@@ -9,7 +9,8 @@ from langchain_community.document_loaders.pdf import PyPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.services.documents import DocumentMetadata
+from app.constants import DocumentContentType
+from app.models import DocumentMetadata
 
 
 class VectorDocumentStore(Protocol):
@@ -54,7 +55,7 @@ class DocumentIngestionService:
     @staticmethod
     def load_document(metadata: DocumentMetadata, path: Path) -> list[Document]:
         """Loads a document using the loader for its content type."""
-        if metadata.content_type == "application/pdf":
+        if metadata.content_type == DocumentContentType.PDF:
             return PyPDFLoader(str(path)).load()
         return TextLoader(str(path), autodetect_encoding=True).load()
 

@@ -5,7 +5,8 @@ from uuid import uuid4
 import pytest
 from langchain_core.documents import Document
 
-from app.services.documents import DocumentMetadata
+from app.constants import DocumentContentType
+from app.models import DocumentMetadata
 from app.services.ingestion import (
     DocumentIngestionError,
     DocumentIngestionLimitError,
@@ -29,7 +30,7 @@ def metadata() -> DocumentMetadata:
     return DocumentMetadata(
         id=uuid4(),
         filename="notes.txt",
-        content_type="text/plain",
+        content_type=DocumentContentType.TEXT,
         size=30,
         chunk_ids=[],
     )
