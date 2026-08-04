@@ -38,3 +38,25 @@ class DocumentIdsResponse(BaseModel):
     """Represents a collection of document identifiers."""
 
     ids: list[UUID]
+
+
+class QueryRequestBody(BaseModel):
+    """Carries a natural-language query scoped to a single document."""
+
+    query: str
+    file_id: UUID
+
+
+class QueryResultItem(BaseModel):
+    """Represents a retrieved document chunk returned by a query."""
+
+    content: str
+    metadata: dict[str, str]
+
+
+class QueryResponse(BaseModel):
+    """Represents the chunks retrieved for a document-scoped query."""
+
+    query: str
+    file_id: UUID
+    results: list[QueryResultItem]
