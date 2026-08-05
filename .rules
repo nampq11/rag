@@ -5,7 +5,31 @@
 * Prefer implementing functionality in existing files unless it is a new logical component. Avoid creating many small files.
 * Avoid creative additions unless explicitly requested.
 * Use full words for variable names (no abbreviations like "q" for "queue")
+* Use functional, declarative programming; avoid classes where possible.
+* Prefer iteration and modularization over code duplication.
+* Use descriptive variable names with auxiliary verbs (e.g., is_encrypted, has_valid_signature).
+* Favor named exports for commands and utility functions.
+* Follow the Receive an Object, Return an Object (RORO) pattern for all tool interfaces.
 
+## Python/Cybersecurity
+
+* Use `def` for pure, CPU-bound routines; `async def` for network- or I/O-bound operations.
+* Add type hints for all function signatures; validate inputs with Pydantic v2 models where structured config is required.
+
+## Error Handling and Validation
+
+* Perform error and edge-case checks at the top of each function (guard clauses).
+* Use early returns for invalid inputs (e.g., malformed target addresses).
+* Log errors with structured context (module, function, parameters).
+* Raise custom exceptions (e.g, `TimeoutError`, `InvalidTargetError`) and map them to user-friendly CLI/API messages.
+* Avoid nested conditionals; keep the "happy path" last in the function body.
+
+## Security-Specific Guidelines
+
+* Sanitize all external inputs; never invoke shell commands with unsanitized strings.
+* Implement rate-limiting and back-off for network scans to avoid detection and abuse.
+* Ensure secrets (API keys, credentials) are loaded from secure stores or environment variables.
+* 
 
 # Pull request hygiene
 
