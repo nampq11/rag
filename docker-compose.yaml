@@ -23,10 +23,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-mydatabase}
       POSTGRES_USER: ${POSTGRES_USER:-myuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
+      UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-uploads}
+      VECTOR_COLLECTION_NAME: ${VECTOR_COLLECTION_NAME:-documents}
     ports:
       - "8000:8000"
     volumes:
-      - ./uploads:/app/uploads
+      - ./${UPLOAD_DIRECTORY:-uploads}:/app/${UPLOAD_DIRECTORY:-uploads}
     depends_on:
       db:
         condition: service_healthy

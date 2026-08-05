@@ -45,6 +45,7 @@ class QueryRequestBody(BaseModel):
 
     query: str
     file_id: UUID
+    limit: int = Field(default=4, ge=1, le=20)
 
 
 class StoreDocument(BaseModel):

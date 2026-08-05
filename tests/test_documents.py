@@ -593,3 +593,19 @@ def test_load_document_converts_office_document_to_markdown(
         "# Quarterly report\n\nRevenue: $100"
     ]
     assert documents[0].metadata == {"source": str(stored_path)}
+
+
+@pytest.mark.parametrize("limit", [0, 21])
+def test_document_query_rejects_out_of_range_limit(limit: int) -> None:
+    response = send_request(
+        "POST",
+        "/documents/query",
+        headers={"Authorization": f"Bearer {create_access_token()}"},
+        json={
+            "query": "Where is the answer?",
+            "file_id": str(uuid4()),
+            "limit": limit,
+        },
+    )
+
+    assert response.status_code == 422
