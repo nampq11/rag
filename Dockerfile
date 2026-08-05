@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+LABEL org.opencontainers.image.source="https://github.com/nampq11/rag"
+
 COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /uvx /bin/
 
 WORKDIR /app

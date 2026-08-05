@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.2.0] - 2026-08-05
+
+### Added
+
+- Added document similarity query endpoint. #5
+- Added local file ingestion for document embeddings. #6
+- Added Docker build and GitHub Container Registry push scripts.
+
 ## [0.1.0] - 2026-08-04
 
 ### Added
