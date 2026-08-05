@@ -5,7 +5,7 @@ from pathlib import Path
 
 import jwt
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parents[2]
 SCRIPT_PATH = PROJECT_ROOT / "bin" / "generate_jwt.py"
 JWT_SECRET_KEY = "test-secret-key-must-be-at-least-32-characters"
 
