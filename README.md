@@ -23,9 +23,9 @@ PostgreSQL is available on the host port configured by `POSTGRES_PORT` (default 
 
 ## Document ingestion
 
-`POST /documents/embed` saves each upload, then uses LangChain loaders and `RecursiveCharacterTextSplitter` to split it into chunks. Chunks are embedded in bounded `EMBEDDING_BATCH_SIZE` batches and stored in the pgvector collection configured by `VECTOR_COLLECTION_NAME`. Their IDs are persisted with the document metadata, so deletion remains correct if chunking settings change later.
+`POST /documents/embed` saves each upload, then uses Firecrawl Anydoc to convert supported office documents into Markdown before `RecursiveCharacterTextSplitter` splits them into chunks. Chunks are embedded in bounded `EMBEDDING_BATCH_SIZE` batches and stored in the pgvector collection configured by `VECTOR_COLLECTION_NAME`. Their IDs are persisted with the document metadata, so deletion remains correct if chunking settings change later.
 
-Supported ingestion formats are UTF-8 text and PDF. The original document can still be downloaded with `GET /documents/{document_id}`. Deleting a document removes its matching vector chunks before removing the stored file.
+Supported ingestion formats are UTF-8 text, PDF, Word (`.doc`, `.docx`, `.docm`), PowerPoint (`.ppt`, `.pps`, `.pot`, `.pptx`, `.pptm`, `.ppsx`, `.ppsm`), Excel (`.xls`, `.xlsx`, `.xlsm`, `.xlsb`), OpenDocument (`.odt`, `.ods`, `.odp`), RTF, EPUB, and CSV. The original document can still be downloaded with `GET /documents/{document_id}`. Deleting a document removes its matching vector chunks before removing the stored file.
 
 `POST /documents/local/embed` ingests a file already present below `LOCAL_FILES_DIRECTORY`. Send `{"path": "relative/path/to/file.txt"}`. The service rejects absolute paths, traversal outside that directory, and symlinks that resolve outside it; it copies the file into `UPLOAD_DIRECTORY` before indexing so download and deletion behave exactly like uploaded documents.
 
