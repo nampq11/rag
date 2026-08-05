@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.3.0] - 2026-08-05
+
 ### Added
 
 - Added Word, PowerPoint, Excel, OpenDocument, RTF, EPUB, and CSV ingestion through Firecrawl Anydoc. #7
