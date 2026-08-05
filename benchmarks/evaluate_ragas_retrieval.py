@@ -21,7 +21,7 @@ from ragas.llms import llm_factory
 from ragas.metrics.collections import ContextPrecision, ContextRecall
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.services.retrieval import search_document_vectors
+from app.services.vector_store import search_document_vectors
 from benchmarks.benchmark_models import BenchmarkRecord, load_records
 
 

@@ -1,6 +1,10 @@
 """PGVector setup and lifecycle functions."""
 
+from dataclasses import dataclass
 from functools import lru_cache
+from time import perf_counter
+from typing import Any
+from uuid import UUID
 
 from langchain_core.embeddings import Embeddings
 from langchain_ollama import OllamaEmbeddings
@@ -11,6 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 # Assigned once by create_vector_store at startup. The process owns a single
 # embeddings model, so the cache below can key on the query text alone.
 _query_embeddings: Embeddings | None = None
+
+
+@dataclass(frozen=True)
+class VectorSearchResult:
+    """Contains retrieved documents and vector-search duration."""
+
+    documents: list[Any]
+    duration_seconds: float
 
 
 @lru_cache(maxsize=128)
@@ -28,6 +40,31 @@ def get_cached_query_embedding(query: str) -> list[float]:
             "create_vector_store must run before any query"
         )
     return embeddings.embed_query(query)
+
+
+async def search_document_vectors(
+    *,
+    vector_store: PGVector,
+    embedding: list[float],
+    document_id: UUID,
+    limit: int,
+) -> VectorSearchResult:
+    """Searches one document and measures only the vector-store operation."""
+    if not embedding:
+        raise ValueError("Embedding must not be empty")
+    if limit < 1 or limit > 20:
+        raise ValueError("Limit must be between 1 and 20")
+
+    started_at = perf_counter()
+    documents = await vector_store.asimilarity_search_by_vector(
+        embedding,
+        k=limit,
+        filter={"document_id": str(document_id)},
+    )
+    return VectorSearchResult(
+        documents=documents,
+        duration_seconds=perf_counter() - started_at,
+    )
 
 
 def create_vector_store(

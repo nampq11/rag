@@ -45,8 +45,10 @@ from app.services.ingestion import (
     delete_document_vectors,
     ingest_document,
 )
-from app.services.retrieval import search_document_vectors
-from app.services.vector_store import get_cached_query_embedding
+from app.services.vector_store import (
+    get_cached_query_embedding,
+    search_document_vectors,
+)
 from app.utils.document_loader import infer_content_type
 
 

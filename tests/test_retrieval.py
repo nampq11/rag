@@ -4,7 +4,7 @@ from uuid import UUID
 import pytest
 
 from app.models import QueryRequestBody
-from app.services.retrieval import search_document_vectors
+from app.services.vector_store import search_document_vectors
 
 
 class RecordingVectorStore:

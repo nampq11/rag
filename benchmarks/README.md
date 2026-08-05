@@ -6,7 +6,7 @@ the approved Ragas JSONL data, generated candidates, reports, and baselines unde
 
 It measures Ragas `ContextPrecision` and `ContextRecall` for k=1, 3, and 5. It
 also reports end-to-end authenticated HTTP latency and pgvector-only latency.
-The latter calls the shared `app.services.retrieval.search_document_vectors`
+The latter calls the shared `app.services.vector_store.search_document_vectors`
 function, so it measures the same search operation as the API without changing
 the production response schema.
 
