@@ -1,7 +1,6 @@
 """Document loading by supported content type."""
 
 from pathlib import Path
-from typing import Literal, TypeAlias
 
 import anydoc
 from langchain_community.document_loaders import TextLoader
@@ -10,22 +9,7 @@ from langchain_core.documents import Document
 from app.constants import DocumentContentType
 from app.models import DocumentMetadata
 
-AnydocFormat: TypeAlias = Literal[
-    "csv",
-    "doc",
-    "docx",
-    "epub",
-    "odt",
-    "ods",
-    "odp",
-    "pdf",
-    "ppt",
-    "pptx",
-    "rtf",
-    "xlsx",
-]
-
-DOCUMENT_FORMATS: dict[str, tuple[AnydocFormat, str]] = {
+DOCUMENT_FORMATS: dict[str, tuple[anydoc.Format, str]] = {
     ".pdf": ("pdf", DocumentContentType.PDF),
     ".doc": ("doc", "application/msword"),
     ".docx": (
