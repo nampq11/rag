@@ -37,3 +37,13 @@ Configuration and limits are documented in `.env.example`. The API creates a URI
 uv run ruff check .
 uv run pytest
 ```
+
+`POST /documents/query` accepts `query`, `file_id`, and an optional `limit`
+between 1 and 20. It returns four chunks by default.
+
+## Local retrieval benchmark
+
+The private, local-only Ragas retrieval benchmark is documented in
+[`benchmarks/README.md`](benchmarks/README.md). It evaluates Context Precision,
+Context Recall, and vector-search plus end-to-end query latency without adding
+the private corpus or benchmark results to Git.

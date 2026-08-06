@@ -64,7 +64,7 @@ async def ingest_document(
             batch_documents = chunks[start : start + batch_size]
             batch_chunk_ids = chunk_ids[start : start + batch_size]
             inserted_chunk_ids.extend(batch_chunk_ids)
-            await add_documents(batch_documents, batch_chunk_ids)
+            await add_documents(batch_documents, ids=batch_chunk_ids)
         return chunk_ids
     except Exception as error:
         if inserted_chunk_ids:

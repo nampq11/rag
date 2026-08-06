@@ -45,7 +45,10 @@ from app.services.ingestion import (
     delete_document_vectors,
     ingest_document,
 )
-from app.services.vector_store import get_cached_query_embedding
+from app.services.vector_store import (
+    get_cached_query_embedding,
+    search_document_vectors,
+)
 from app.utils.document_loader import infer_content_type
 
 
@@ -333,9 +336,11 @@ async def query_embeddings_by_file_id(
         embedding = await asyncio.to_thread(
             get_cached_query_embedding, body.query
         )
-        documents = await vector_store.asimilarity_search_by_vector(
+        search_result = await search_document_vectors(
+            vector_store=vector_store,
             embedding=embedding,
-            filter={"document_id": str(body.file_id)},
+            document_id=body.file_id,
+            limit=body.limit,
         )
         return QueryResponse(
             query=body.query,
@@ -345,7 +350,7 @@ async def query_embeddings_by_file_id(
                     content=document.page_content,
                     metadata=document_query_metadata(document.metadata),
                 )
-                for document in documents
+                for document in search_result.documents
             ],
         )
     except Exception as error:

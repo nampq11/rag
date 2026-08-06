@@ -9,3 +9,7 @@ venv/
 dev.yml
 .ruff_cache/
 .pi/todos/
+cv.pdf
+benchmark_uploads/
+benchmarks/local/
+.env.benchmark
