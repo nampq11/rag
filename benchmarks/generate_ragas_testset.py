@@ -50,9 +50,7 @@ def source_metadata(*, source_pdf: Path) -> dict[str, str]:
     }
 
 
-def build_generation_prompt(
-    *, contexts: list[str], testset_size: int
-) -> str:
+def build_generation_prompt(*, contexts: list[str], testset_size: int) -> str:
     """Builds the single-turn, JSON-only candidate-generation request."""
     formatted_contexts = "\n\n".join(
         f"[Context {index}]\n{context}"
@@ -71,7 +69,9 @@ Source contexts:
 """
 
 
-def build_records(*, response_content: str, contexts: list[str]) -> list[BenchmarkRecord]:
+def build_records(
+    *, response_content: str, contexts: list[str]
+) -> list[BenchmarkRecord]:
     """Validates DeepSeek output and attaches exact source contexts."""
     try:
         payload = json.loads(response_content)
@@ -141,7 +141,9 @@ def main() -> None:
     )
     if not isinstance(response.content, str):
         raise TypeError("DeepSeek returned a non-text candidate response")
-    records = build_records(response_content=response.content, contexts=contexts)
+    records = build_records(
+        response_content=response.content, contexts=contexts
+    )
     if not records:
         raise ValueError("DeepSeek returned no benchmark candidates")
 

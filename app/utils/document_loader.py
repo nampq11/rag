@@ -57,7 +57,9 @@ DOCUMENT_FORMATS: dict[str, tuple[anydoc.Format, str]] = {
 
 def load_document(metadata: DocumentMetadata, path: Path) -> list[Document]:
     """Loads a document into LangChain documents suitable for chunking."""
-    document_format = DOCUMENT_FORMATS.get(Path(metadata.filename).suffix.lower())
+    document_format = DOCUMENT_FORMATS.get(
+        Path(metadata.filename).suffix.lower()
+    )
     if document_format is None:
         return TextLoader(str(path), autodetect_encoding=True).load()
 
