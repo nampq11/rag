@@ -25,8 +25,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
       UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-uploads}
       VECTOR_COLLECTION_NAME: ${VECTOR_COLLECTION_NAME:-documents}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./${UPLOAD_DIRECTORY:-uploads}:/app/${UPLOAD_DIRECTORY:-uploads}
     depends_on:

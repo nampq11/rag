@@ -18,7 +18,7 @@ from langchain_postgres import PGVector
 from openai import OpenAI
 from ragas import EvaluationDataset, evaluate
 from ragas.llms import llm_factory
-from ragas.metrics.collections import ContextPrecision, ContextRecall
+from ragas.metrics import ContextPrecision, ContextRecall
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.services.vector_store import search_document_vectors
@@ -41,7 +41,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--collection-name", default=os.environ.get("VECTOR_COLLECTION_NAME")
     )
-    parser.add_argument("--judge-model", default="qwen3.5:4b")
+    parser.add_argument(
+        "--judge-model",
+        default=os.environ.get("RAGAS_JUDGE_MODEL", "deepseek-v4-flash"),
+    )
     parser.add_argument(
         "--embedding-model",
         default=os.environ.get(
@@ -52,6 +55,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--ollama-base-url",
         default=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+    )
+    parser.add_argument(
+        "--deepseek-api-key", default=os.environ.get("DEEPSEEK_API_KEY")
     )
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--baseline", type=Path)
@@ -308,6 +314,10 @@ def main() -> None:
         raise ValueError("database-url is required")
     if not arguments.collection_name:
         raise ValueError("collection-name is required")
+    if not arguments.judge_model.strip():
+        raise ValueError("judge-model must not be empty")
+    if not arguments.deepseek_api_key:
+        raise ValueError("DEEPSEEK_API_KEY or --deepseek-api-key is required")
     if arguments.repetitions < 1:
         raise ValueError("repetitions must be greater than zero")
 
@@ -318,8 +328,8 @@ def main() -> None:
     judge_model = llm_factory(
         arguments.judge_model,
         client=OpenAI(
-            base_url=f"{arguments.ollama_base_url.rstrip('/')}/v1",
-            api_key="ollama",
+            base_url="https://api.deepseek.com",
+            api_key=arguments.deepseek_api_key,
         ),
     )
     report: dict[str, Any] = {

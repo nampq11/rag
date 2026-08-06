@@ -1,8 +1,9 @@
 # Local RAG retrieval benchmark
 
-This benchmark is intentionally local-only. It uses the private `cv.pdf` corpus,
-the approved Ragas JSONL data, generated candidates, reports, and baselines under
-`benchmarks/local/`. Git ignores all of them.
+This benchmark stores the private `cv.pdf` corpus, approved Ragas JSONL data,
+generated candidates, reports, and baselines under `benchmarks/local/`. Git
+ignores all of them. Candidate generation sends source text to DeepSeek, and
+evaluation sends retrieval contexts and references to DeepSeek for judging.
 
 It measures Ragas `ContextPrecision` and `ContextRecall` for k=1, 3, and 5. It
 also reports end-to-end authenticated HTTP latency and pgvector-only latency.
@@ -16,11 +17,11 @@ the production response schema.
 2. Copy `.env.benchmark.example` to `.env.benchmark`, then set values that match
    your local PostgreSQL instance. `VECTOR_COLLECTION_NAME` and
    `UPLOAD_DIRECTORY` must be unused benchmark-specific names.
-3. Pull the local judge model:
-
-   ```bash
-   ollama pull qwen3.5:4b
-   ```
+3. Set `DEEPSEEK_API_KEY` in `.env.benchmark`. The judge uses DeepSeek's
+   current `deepseek-v4-flash` model through the DeepSeek API. Ollama remains
+   required locally only for the embedding model. The default
+   `OLLAMA_DOCKER_BASE_URL` lets the API container reach an Ollama server on
+   the host; set it if Ollama runs elsewhere.
 
 4. Start the isolated API resources. The explicit shell environment overrides
    the normal Compose defaults while `.env` continues to provide normal API
