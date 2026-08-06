@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.4.0] - 2026-08-05
+
+### Added
+
+- Added local RAG retrieval benchmarking with generated test sets and Ragas evaluation. #8
+
 ## [0.3.0] - 2026-08-05
 
 ### Added
